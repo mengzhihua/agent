@@ -22,6 +22,7 @@ export interface McpServerConfig {
   args?: string[];
   env?: Record<string, string>;
   url?: string;
+  headers?: Record<string, string>;
 }
 
 export interface McpFile {
@@ -45,6 +46,7 @@ export class McpSession {
   constructor(serverName: string, cfg: McpServerConfig) {
     this.serverName = serverName;
     this.url = cfg.url;
+    if (cfg.headers) Object.assign(this.headers, cfg.headers);
   }
 
   static async connect(serverName: string, cfg: McpServerConfig): Promise<McpSession> {

@@ -222,7 +222,7 @@ export async function dispatch(
           promptCapabilities: { image: false, audio: false, embeddedContext: false },
           mcpCapabilities: { http: true, sse: false },
         },
-        agentInfo: { name: "agent", version: "0.8.0" },
+        agentInfo: { name: "agent", version: "0.9.0" },
         authMethods: [],
       };
     case "authenticate":
@@ -230,12 +230,14 @@ export async function dispatch(
     case "session/new": {
       const sessionId = host.createSession(sessionCwd(req.params));
       sessions.add(sessionId);
+      await host.attachSessionMcp(sessionId, req.params?.mcpServers);
       return { sessionId, modes: modeState(host.config.runMode) };
     }
     case "session/load": {
       const sessionId = String(req.params?.sessionId ?? "");
       host.resume(sessionId, sessionCwd(req.params));
       sessions.add(sessionId);
+      await host.attachSessionMcp(sessionId, req.params?.mcpServers);
       return { sessionId, modes: modeState(host.config.runMode) };
     }
     case "session/set_mode": {

@@ -12,7 +12,7 @@
 4. `session/update` `tool_call_update` 带 `{ type: "terminal", terminalId }`
 5. CLI / 无 terminal 能力：原 spawn + 沙箱不变
 
-不做（以后）：session 级 MCP 列表、`additionalDirectories`、Docker workspace、云端 VM、Playwright 包。
+不做（以后）：session 级 MCP 列表见 [期 8](phase-8.md)。`additionalDirectories`、Docker workspace、云端 VM、Playwright 包。
 
 ## 怎么跑
 

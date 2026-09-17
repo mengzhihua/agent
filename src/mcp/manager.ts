@@ -10,7 +10,10 @@ export class McpManager {
   constructor(private readonly sessions: McpSession[]) {}
 
   static async connect(workspace: string): Promise<McpManager> {
-    const configs = loadMcpConfigs(workspace);
+    return McpManager.connectConfigs(loadMcpConfigs(workspace));
+  }
+
+  static async connectConfigs(configs: Record<string, McpServerConfig>): Promise<McpManager> {
     const sessions: McpSession[] = [];
     for (const [name, cfg] of Object.entries(configs)) {
       try {

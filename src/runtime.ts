@@ -2,8 +2,10 @@ import { ArtifactStore } from "./artifacts/store.js";
 import { createBrowserDriver } from "./browser/chrome.js";
 import { BrowserSession } from "./browser/session.js";
 import { diskFileIo, type FileIo } from "./files/io.js";
+import type { McpManager } from "./mcp/manager.js";
 import type { AcpTerminal } from "./protocol/terminal.js";
 import type { AgentConfig } from "./types.js";
+import type { ToolRegistry } from "./tools/registry.js";
 
 export interface AskUserRequest {
   question: string;
@@ -21,6 +23,8 @@ export interface SessionRuntime {
   askUser?: AskUserFn;
   terminal?: AcpTerminal;
   onTerminal?: (callId: string, terminalId: string) => void;
+  tools?: ToolRegistry;
+  mcp?: McpManager;
 }
 
 export function createSessionRuntime(
