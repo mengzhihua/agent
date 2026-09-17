@@ -11,7 +11,7 @@ export function browserTool(config: AgentConfig): ToolHandler {
   return {
     definition: {
       name: "browser",
-      description: `Control a workspace browser. Actions: open, snapshot, click, type, screenshot, close, takeover. Use takeover on login/captcha/payment pages. Screenshots/HTML land in ${config.artifactsDir}.`,
+      description: `Control a workspace browser (${config.browserBackend === "chrome" ? "Chrome CDP" : "HTML fetch"}). Actions: open, snapshot, click, type, screenshot, close, takeover. Use takeover on login/captcha/payment pages. Screenshots land in ${config.artifactsDir}.`,
       risk: "exec",
       parameters: {
         type: "object",
@@ -40,11 +40,12 @@ export function browserTool(config: AgentConfig): ToolHandler {
       if (action === "screenshot") {
         if (!ctx.runtime) throw new Error("artifacts runtime is not available");
         const view = browser.view();
+        const shot = await browser.screenshot();
         const artifact = ctx.runtime.artifacts.save({
           title: view.title || view.url || "screenshot",
           kind: "screenshot",
-          filename: "snapshot.html",
-          content: browser.html() || formatEmptyPage(view.url),
+          filename: shot.filename,
+          content: shot.buffer,
           sessionId: ctx.runtime.sessionId,
         });
         return `saved ${artifact.path}\n${browser.snapshot()}`;
@@ -74,8 +75,4 @@ export function browserTool(config: AgentConfig): ToolHandler {
       throw new Error(`unknown browser action: ${action}`);
     },
   };
-}
-
-function formatEmptyPage(url: string): string {
-  return `<html><body>empty snapshot ${url}</body></html>`;
 }

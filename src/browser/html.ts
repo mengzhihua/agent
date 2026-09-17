@@ -1,4 +1,4 @@
-import { formatSnapshot, sensitiveWarning, type BrowserDriver, type BrowserNode, type PageView } from "./types.js";
+import { formatSnapshot, sensitiveWarning, type BrowserDriver, type BrowserNode, type PageView, type Screenshot } from "./types.js";
 
 export function htmlToText(html: string): string {
   return decode(
@@ -134,6 +134,11 @@ export class HtmlDriver implements BrowserDriver {
 
   url(): string {
     return this.currentUrl;
+  }
+
+  async screenshot(): Promise<Screenshot> {
+    const html = this.currentHtml || `<html><body>empty snapshot ${this.currentUrl}</body></html>`;
+    return { buffer: Buffer.from(html, "utf8"), filename: "snapshot.html" };
   }
 
   async close(): Promise<void> {

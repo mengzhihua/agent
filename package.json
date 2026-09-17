@@ -1,9 +1,9 @@
 {
   "name": "agent",
   "private": true,
-  "version": "0.4.0",
+  "version": "0.5.0",
   "type": "module",
-  "description": "General-purpose agent harness: one tool loop, local workspace, browser, artifacts, sandbox, eval.",
+  "description": "General-purpose agent harness: one tool loop, local workspace, Chrome browser, artifacts, sandbox, eval.",
   "bin": {
     "agent": "./dist/cli.js"
   },

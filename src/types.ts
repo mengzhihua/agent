@@ -10,6 +10,10 @@ export type SandboxMode = "auto" | "none";
 
 export type SandboxBackend = "bwrap" | "none";
 
+export type BrowserMode = "auto" | "html" | "chrome";
+
+export type BrowserBackend = "html" | "chrome";
+
 export interface PlanStep {
   title: string;
   status: "pending" | "in_progress" | "completed";
@@ -30,6 +34,8 @@ export interface AgentConfig {
   artifactsDir: string;
   sandbox: SandboxMode;
   sandboxBackend: SandboxBackend;
+  browser: BrowserMode;
+  browserBackend: BrowserBackend;
 }
 
 export interface Artifact {

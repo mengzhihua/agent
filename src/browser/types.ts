@@ -13,6 +13,11 @@ export interface PageView {
   nodes: BrowserNode[];
 }
 
+export interface Screenshot {
+  buffer: Buffer;
+  filename: string;
+}
+
 export interface BrowserDriver {
   open(url: string, signal: AbortSignal): Promise<PageView>;
   click(ref: string, signal: AbortSignal): Promise<PageView>;
@@ -20,6 +25,7 @@ export interface BrowserDriver {
   snapshot(): PageView;
   html(): string;
   url(): string;
+  screenshot(): Promise<Screenshot>;
   close(): Promise<void>;
 }
 

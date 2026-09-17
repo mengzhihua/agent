@@ -13,7 +13,7 @@
 3. **Eval / replay**：JSON 用例按顺序重放工具调用（不走模型）。`agent eval test/evals`
 4. CLI：`--sandbox auto|none`，`AGENT_SANDBOX`
 
-不做（以后）：Playwright 实装、每任务云 VM / Docker workspace、Temporal、完整 Zed ACP 注册表。
+不做（以后）：Playwright 包、每任务云 VM / Docker workspace、Temporal、完整 Zed ACP 注册表。真浏览器见 [期 4](phase-4.md)。
 
 ## 沙箱长什么样
 

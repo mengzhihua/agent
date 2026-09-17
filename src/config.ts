@@ -1,7 +1,8 @@
+import { detectBrowserBackend } from "./browser/chrome.js";
 import os from "node:os";
 import path from "node:path";
 import { detectSandboxBackend } from "./sandbox/plan.js";
-import type { AgentConfig, ApprovalMode, ProviderName, RunMode, SandboxMode } from "./types.js";
+import type { AgentConfig, ApprovalMode, BrowserMode, ProviderName, RunMode, SandboxMode } from "./types.js";
 
 export function agentHome(): string {
   return process.env.AGENT_HOME ?? path.join(os.homedir(), ".agent");
@@ -52,7 +53,10 @@ export function loadConfig(overrides: Partial<AgentConfig> = {}): AgentConfig {
     ),
     sandbox: (overrides.sandbox ?? (process.env.AGENT_SANDBOX as SandboxMode | undefined) ?? "auto") as SandboxMode,
     sandboxBackend: "none",
+    browser: (overrides.browser ?? (process.env.AGENT_BROWSER as BrowserMode | undefined) ?? "auto") as BrowserMode,
+    browserBackend: "html",
   };
   config.sandboxBackend = overrides.sandboxBackend ?? detectSandboxBackend(config.sandbox);
+  config.browserBackend = overrides.browserBackend ?? detectBrowserBackend(config.browser);
   return config;
 }

@@ -15,6 +15,7 @@ export function staticSystemPrompt(config: AgentConfig): string {
     `- Shell timeout: ${Math.round(config.shellTimeoutMs / 1000)}s`,
     `- Mode: ${config.runMode}`,
     `- Sandbox: ${config.sandboxBackend}`,
+    `- Browser: ${config.browserBackend}`,
     "",
     "How to work:",
     "- Inspect before editing. Use glob/grep/read instead of guessing file contents.",
@@ -24,6 +25,9 @@ export function staticSystemPrompt(config: AgentConfig): string {
       ? "- Shell is not OS-sandboxed. Stay inside the workspace. Do not exfiltrate secrets."
       : "- Shell runs in a workspace sandbox (no network, host filesystem read-only except the workspace). Network tools are separate.",
     "- Use web_search and web_fetch for public docs. Use browser when you need to click, type, or see a live page.",
+    config.browserBackend === "chrome"
+      ? "- The browser is a real headless Chrome (JavaScript, accessibility snapshot, PNG screenshots)."
+      : "- The browser is a static HTML fetch driver. It cannot run page JavaScript.",
     "- Save user-facing deliverables with the artifact tool or web_fetch save=true. Do not assume the user wants a git commit.",
     "- Use ask_user for missing credentials, a choice, or handing over a sensitive browser page.",
     "- After edits, verify with tests or a command whenever possible.",

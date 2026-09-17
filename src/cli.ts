@@ -10,7 +10,7 @@ import { createProvider } from "./provider/factory.js";
 import { runAcpStdio } from "./protocol/acp.js";
 import type { AskUserFn } from "./runtime.js";
 import { SessionStore } from "./session/store.js";
-import type { Approver, LoopEvent, ProviderName, SandboxMode } from "./types.js";
+import type { Approver, BrowserMode, LoopEvent, ProviderName, SandboxMode } from "./types.js";
 
 function usage(): string {
   return `Usage: agent [options] [prompt]
@@ -27,16 +27,18 @@ function usage(): string {
   --provider <name>      openai | anthropic
   --session-dir <dir>    Transcript directory
   --sandbox <mode>       auto (default) | none
+  --browser <mode>       auto (Chrome if installed) | chrome | html
   --no-mcp               Do not start MCP servers
   -h, --help             Show help
 
 Environment: OPENAI_API_KEY, OPENAI_BASE_URL, XAI_API_KEY, ANTHROPIC_API_KEY,
 AGENT_MODEL, AGENT_HOME, AGENT_APPROVAL=ask|auto, AGENT_MODE=default|plan,
-AGENT_ARTIFACTS, AGENT_SANDBOX=auto|none
+AGENT_ARTIFACTS, AGENT_SANDBOX=auto|none, AGENT_BROWSER=auto|chrome|html, AGENT_CHROME
 
 Project files: AGENTS.md, .agent/skills/*/SKILL.md, .agent/mcp.json, .agent/hooks.json
 Deliverables land in <workspace>/artifacts (or AGENT_ARTIFACTS).
 Shell is OS-sandboxed with bubblewrap when AGENT_SANDBOX=auto and bwrap is installed.
+Browser uses headless Chrome via CDP when found, otherwise static HTML fetch.
 `;
 }
 
@@ -79,6 +81,7 @@ async function main(): Promise<void> {
       provider: { type: "string" },
       "session-dir": { type: "string" },
       sandbox: { type: "string" },
+      browser: { type: "string" },
       "no-mcp": { type: "boolean", default: false },
       help: { type: "boolean", short: "h", default: false },
     },
@@ -97,6 +100,7 @@ async function main(): Promise<void> {
     runMode: values.plan ? "plan" : undefined,
     sessionDir: values["session-dir"],
     sandbox: values.sandbox as SandboxMode | undefined,
+    browser: values.browser as BrowserMode | undefined,
   });
   const store = new SessionStore(config.sessionDir);
 

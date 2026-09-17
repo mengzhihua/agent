@@ -1,5 +1,5 @@
 import { HtmlDriver } from "./html.js";
-import { formatSnapshot, type BrowserDriver, type PageView } from "./types.js";
+import { formatSnapshot, type BrowserDriver, type PageView, type Screenshot } from "./types.js";
 
 export class BrowserSession {
   constructor(private driver: BrowserDriver = new HtmlDriver()) {}
@@ -34,6 +34,10 @@ export class BrowserSession {
 
   url(): string {
     return this.driver.url();
+  }
+
+  async screenshot(): Promise<Screenshot> {
+    return this.driver.screenshot();
   }
 
   async close(): Promise<void> {
