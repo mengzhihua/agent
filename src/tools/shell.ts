@@ -31,7 +31,7 @@ export async function shellTool(
     stderr += String(chunk);
   });
 
-  const code: number | null = await new Promise((resolve, reject) => {
+  const code = await new Promise<number | null>((resolve, reject) => {
     child.on("error", reject);
     child.on("close", (exitCode) => resolve(exitCode));
   }).finally(() => clearTimeout(timer));
