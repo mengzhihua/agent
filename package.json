@@ -1,0 +1,25 @@
+{
+  "name": "agent",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "General-purpose agent harness: one tool loop, local workspace, resumable sessions.",
+  "bin": {
+    "agent": "./dist/cli.js"
+  },
+  "scripts": {
+    "agent": "tsx src/cli.ts",
+    "build": "tsc",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.10",
+    "tsx": "^4.19.3",
+    "typescript": "^5.8.2",
+    "vitest": "^3.0.9"
+  }
+}

@@ -1,19 +1,31 @@
 # agent
 
-通用 agent 软件的研究与实现。
+通用 agent 软件：一个极简的模型–工具循环，外面套 harness。
 
-当前仓库先放行业研究，作为后续架构选型的基线。
+当前进度：**期 0 — 能跑完任务的 loop**。行业调研见 [docs/industry-agent-research.md](docs/industry-agent-research.md)，本期说明见 [docs/phase-0.md](docs/phase-0.md)。
 
-## 文档
+## 运行
 
-- [通用 Agent 行业研究](docs/industry-agent-research.md) — Codex、Claude Code、Grok Build、Devin、Cursor、Gemini CLI、Manus、OpenHands 等怎么做，以及通用 harness 的收敛形态。
+```bash
+npm install
+npm test
+npm run agent -- -y -p "What files are in this workspace?"
+```
 
-## 研究结论（极简）
+密钥（任选）：`OPENAI_API_KEY`、`OPENAI_BASE_URL`、`XAI_API_KEY`、`ANTHROPIC_API_KEY`。
 
-通用 agent 不是“更强的聊天”，而是：
+```text
+npm run agent -- -p "prompt"     # 单次
+npm run agent -- -y -p "prompt"  # 写/shell/联网自动放行
+npm run agent -- --list
+npm run agent -- --resume <id> -p "continue"
+npm run agent                    # 交互
+```
 
-**一个极简的模型–工具循环，外面套很重的 harness**（上下文、权限、沙箱、会话、MCP、Skills、多表面协议）。
+无 TTY 且未加 `-y` 时，写操作和 shell 会被拒绝。
 
-一线产品共用同一套循环；差异主要在 workspace（本机 / 容器 / 云 VM）和产品表面（CLI、IDE、异步云端、通用电脑）。
+## 内置工具
 
-落地顺序建议：先做出可取消、可 resume 的 tool loop，再加 Skills/MCP/权限，再考虑浏览器与云端 VM。不要从多角色 agent 框架或自研工作流图起步。
+`read` `grep` `glob` `apply_patch` `shell` `web_search`
+
+会话存在 `$AGENT_HOME/sessions`（默认 `~/.agent/sessions`），JSONL，可 resume。
