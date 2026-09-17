@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { planShell } from "../sandbox/plan.js";
 import type { AgentConfig } from "../types.js";
 import { resolveInWorkspace, truncate } from "../workspace.js";
 
@@ -11,11 +12,12 @@ export async function shellTool(
 ): Promise<string> {
   const cwd = relCwd ? resolveInWorkspace(config.workspace, relCwd) : config.workspace;
   const timeout = timeoutMs ?? config.shellTimeoutMs;
-  const child = spawn(command, {
-    cwd,
-    shell: true,
+  const plan = planShell(config, command, cwd);
+  const child = spawn(plan.file, plan.args, {
+    cwd: plan.cwd,
+    shell: plan.shell,
     signal,
-    env: { ...process.env, TERM: "dumb" },
+    env: plan.env,
   });
 
   let stdout = "";
@@ -37,7 +39,13 @@ export async function shellTool(
   }).finally(() => clearTimeout(timer));
 
   const out = truncate(
-    [`cwd: ${cwd}`, `exit: ${code ?? "killed"}`, stdout && `stdout:\n${stdout}`, stderr && `stderr:\n${stderr}`]
+    [
+      `cwd: ${cwd}`,
+      `sandbox: ${plan.backend}`,
+      `exit: ${code ?? "killed"}`,
+      stdout && `stdout:\n${stdout}`,
+      stderr && `stderr:\n${stderr}`,
+    ]
       .filter(Boolean)
       .join("\n"),
     config.shellOutputLimit,
@@ -49,9 +57,12 @@ export async function shellTool(
 }
 
 export function shellDefinition(config: AgentConfig) {
+  const sandboxed = config.sandboxBackend !== "none";
   return {
     name: "shell",
-    description: `Run a shell command in ${config.workspace}. Non-interactive commands only. Output is truncated.`,
+    description: sandboxed
+      ? `Run a shell command in ${config.workspace}. Sandboxed (${config.sandboxBackend}): no network, host FS read-only except the workspace. Non-interactive only.`
+      : `Run a shell command in ${config.workspace}. Non-interactive commands only. Output is truncated.`,
     risk: "exec" as const,
     parameters: {
       type: "object" as const,

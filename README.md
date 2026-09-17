@@ -2,12 +2,13 @@
 
 通用 agent 软件：一个极简的模型–工具循环，外面套 harness。
 
-当前进度：**期 2 — 浏览器 / artifacts / HITL**。
+当前进度：**期 3 — 沙箱 / eval**。
 
 - [行业研究](docs/industry-agent-research.md) — Codex、Claude Code、Grok Build、Devin、Cursor、Gemini CLI、Manus、OpenHands 等怎么做，以及通用 harness 的收敛形态
 - [期 0](docs/phase-0.md)
 - [期 1](docs/phase-1.md)
 - [期 2](docs/phase-2.md)
+- [期 3](docs/phase-3.md)
 
 ## 研究结论（极简）
 
@@ -34,13 +35,14 @@ npm run agent -- --plan -p "先给出实现计划"
 npm run agent -- -p "prompt"     # 单次
 npm run agent -- -y -p "prompt"  # 写/shell/联网自动放行
 npm run agent -- --plan          # 只读研究 + update_plan
+npm run agent -- eval test/evals # 确定性回归（不调模型）
 npm run agent -- --list
 npm run agent -- --resume <id> -p "continue"
 npm run agent -- acp             # NDJSON JSON-RPC（给编辑器/其他客户端）
 npm run agent                    # 交互（/plan /execute /skills；ask_user 走终端）
 ```
 
-无 TTY 且未加 `-y` 时，写操作和 shell 会被拒绝。工作区不必是 git 仓库；交付物默认写到 `artifacts/`。
+无 TTY 且未加 `-y` 时，写操作和 shell 会被拒绝。工作区不必是 git 仓库；交付物默认写到 `artifacts/`。Linux 上安装 `bubblewrap` 后，shell 默认无网络、只能写 workspace（`AGENT_SANDBOX=none` 可关）。
 
 ## 工具
 

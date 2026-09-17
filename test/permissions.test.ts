@@ -15,6 +15,14 @@ describe("permissions", () => {
     expect(defaultDecision("shell", "auto")).toBe("allow");
   });
 
+  it("auto-allows workspace writes and shell when the sandbox is on", () => {
+    expect(defaultDecision("apply_patch", "ask", { path: "a.ts" }, "bwrap")).toBe("allow");
+    expect(defaultDecision("shell", "ask", { command: "ls" }, "bwrap")).toBe("allow");
+    expect(defaultDecision("artifact", "ask", { action: "save", content: "x" }, "bwrap")).toBe("allow");
+    expect(defaultDecision("web_search", "ask", { query: "x" }, "bwrap")).toBe("ask");
+    expect(defaultDecision("browser", "ask", { action: "click", ref: "e1" }, "bwrap")).toBe("ask");
+  });
+
   it("records deny from the approver", async () => {
     const result = await decidePermission("shell", { command: "rm -rf /" }, "ask", denyApprover());
     expect(result.decision).toBe("deny");

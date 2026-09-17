@@ -85,7 +85,7 @@ export async function dispatch(
       return {
         protocolVersion: "0.1.0",
         agentCapabilities: { prompt: true, session: true },
-        agentInfo: { name: "agent", version: "0.3.0" },
+        agentInfo: { name: "agent", version: "0.4.0" },
       };
     case "session/new": {
       const sessionId = host.createSession();

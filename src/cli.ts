@@ -3,17 +3,19 @@ import { createInterface } from "node:readline/promises";
 import { stdin as input, stdout as output, stderr } from "node:process";
 import { parseArgs } from "node:util";
 import { loadConfig } from "./config.js";
+import { runEvalTarget } from "./eval/run.js";
 import { AgentHost } from "./host.js";
 import { autoApprover } from "./permissions/policy.js";
 import { createProvider } from "./provider/factory.js";
 import { runAcpStdio } from "./protocol/acp.js";
 import type { AskUserFn } from "./runtime.js";
 import { SessionStore } from "./session/store.js";
-import type { Approver, LoopEvent, ProviderName } from "./types.js";
+import type { Approver, LoopEvent, ProviderName, SandboxMode } from "./types.js";
 
 function usage(): string {
   return `Usage: agent [options] [prompt]
        agent acp
+       agent eval <file-or-dir>
 
   -p, --print            Run one prompt and exit
   -y, --yes              Auto-approve write/shell/network tools
@@ -24,15 +26,17 @@ function usage(): string {
   --model <name>         Model id
   --provider <name>      openai | anthropic
   --session-dir <dir>    Transcript directory
+  --sandbox <mode>       auto (default) | none
   --no-mcp               Do not start MCP servers
   -h, --help             Show help
 
 Environment: OPENAI_API_KEY, OPENAI_BASE_URL, XAI_API_KEY, ANTHROPIC_API_KEY,
 AGENT_MODEL, AGENT_HOME, AGENT_APPROVAL=ask|auto, AGENT_MODE=default|plan,
-AGENT_ARTIFACTS
+AGENT_ARTIFACTS, AGENT_SANDBOX=auto|none
 
 Project files: AGENTS.md, .agent/skills/*/SKILL.md, .agent/mcp.json, .agent/hooks.json
 Deliverables land in <workspace>/artifacts (or AGENT_ARTIFACTS).
+Shell is OS-sandboxed with bubblewrap when AGENT_SANDBOX=auto and bwrap is installed.
 `;
 }
 
@@ -42,6 +46,23 @@ async function main(): Promise<void> {
     const store = new SessionStore(config.sessionDir);
     const host = await AgentHost.create(config, createProvider(config), store, autoApprover());
     await runAcpStdio(host);
+    return;
+  }
+
+  if (process.argv[2] === "eval") {
+    const target = process.argv[3];
+    if (!target) throw new Error("usage: agent eval <file-or-dir>");
+    const results = await runEvalTarget(target);
+    let failed = 0;
+    for (const result of results) {
+      if (result.ok) {
+        output.write(`PASS  ${result.name}\n`);
+      } else {
+        failed += 1;
+        stderr.write(`FAIL  ${result.name}: ${result.error}\n`);
+      }
+    }
+    if (failed) process.exitCode = 1;
     return;
   }
 
@@ -57,6 +78,7 @@ async function main(): Promise<void> {
       model: { type: "string" },
       provider: { type: "string" },
       "session-dir": { type: "string" },
+      sandbox: { type: "string" },
       "no-mcp": { type: "boolean", default: false },
       help: { type: "boolean", short: "h", default: false },
     },
@@ -74,6 +96,7 @@ async function main(): Promise<void> {
     approvalMode: values.yes ? "auto" : undefined,
     runMode: values.plan ? "plan" : undefined,
     sessionDir: values["session-dir"],
+    sandbox: values.sandbox as SandboxMode | undefined,
   });
   const store = new SessionStore(config.sessionDir);
 

@@ -108,7 +108,7 @@ describe("agent loop", () => {
       "run echo",
       provider,
       workspace,
-      { approvalMode: "ask" },
+      { approvalMode: "ask", sandbox: "none" },
       denyApprover(),
     );
     const denied = events.find((event) => event.type === "permission");

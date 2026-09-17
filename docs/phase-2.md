@@ -14,7 +14,7 @@
 6. 权限按 action：plan mode 允许 `web_search` / `web_fetch`（不 save）/ `browser open|snapshot`；拒绝 save、click、type、写文件、shell
 7. 登录/验证码/支付页会标 warning，并建议 `browser action=takeover`
 
-不做（期 3）：Playwright 实装、云端 VM、完整 Zed ACP、OS 沙箱。
+不做（以后）：Playwright 实装、云端 VM、完整 Zed ACP、OS 沙箱见 [期 3](phase-3.md)。
 
 ## 工具顺序
 

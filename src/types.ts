@@ -6,6 +6,10 @@ export type ProviderName = "openai" | "anthropic" | "scripted";
 
 export type RunMode = "default" | "plan";
 
+export type SandboxMode = "auto" | "none";
+
+export type SandboxBackend = "bwrap" | "none";
+
 export interface PlanStep {
   title: string;
   status: "pending" | "in_progress" | "completed";
@@ -24,6 +28,8 @@ export interface AgentConfig {
   shellOutputLimit: number;
   subagentDepth: number;
   artifactsDir: string;
+  sandbox: SandboxMode;
+  sandboxBackend: SandboxBackend;
 }
 
 export interface Artifact {
