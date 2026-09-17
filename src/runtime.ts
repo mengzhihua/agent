@@ -1,4 +1,5 @@
 import { ArtifactStore } from "./artifacts/store.js";
+import { createBrowserDriver } from "./browser/chrome.js";
 import { BrowserSession } from "./browser/session.js";
 import type { AgentConfig } from "./types.js";
 
@@ -24,7 +25,7 @@ export function createSessionRuntime(
   return {
     sessionId,
     artifacts: extras.artifacts ?? new ArtifactStore(config.artifactsDir, config.workspace),
-    browser: extras.browser ?? new BrowserSession(),
+    browser: extras.browser ?? new BrowserSession(createBrowserDriver(config.browserBackend)),
     askUser: extras.askUser,
   };
 }

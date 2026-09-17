@@ -10,6 +10,7 @@ export { loadAgentsMd } from "./context/agents-md.js";
 export { ArtifactStore } from "./artifacts/store.js";
 export { BrowserSession } from "./browser/session.js";
 export { HtmlDriver } from "./browser/html.js";
+export { ChromeDriver, createBrowserDriver, findChrome } from "./browser/chrome.js";
 export { createSessionRuntime } from "./runtime.js";
 export { detectSandboxBackend, planShell } from "./sandbox/index.js";
 export { runEvalFile, runEvalTarget } from "./eval/run.js";

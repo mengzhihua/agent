@@ -1,4 +1,5 @@
 import { ArtifactStore } from "./artifacts/store.js";
+import { createBrowserDriver } from "./browser/chrome.js";
 import { BrowserSession } from "./browser/session.js";
 import { loadSkills, type SkillIndex } from "./context/skills.js";
 import { HookRunner } from "./hooks/hooks.js";
@@ -75,7 +76,7 @@ export class AgentHost {
     }
     const runtime = createSessionRuntime(sessionId, this.config, {
       artifacts: this.artifacts,
-      browser: new BrowserSession(),
+      browser: new BrowserSession(createBrowserDriver(this.config.browserBackend)),
       askUser: this.askUser,
     });
     this.runtimes.set(sessionId, runtime);
