@@ -2,7 +2,7 @@
 
 通用 agent 软件：一个极简的模型–工具循环，外面套 harness。
 
-当前进度：**期 8 — ACP 会话 MCP**。
+当前进度：**期 9 — ACP 额外工作区目录**。
 
 - [行业研究](docs/industry-agent-research.md) — Codex、Claude Code、Grok Build、Devin、Cursor、Gemini CLI、Manus、OpenHands 等怎么做，以及通用 harness 的收敛形态
 - [期 0](docs/phase-0.md)
@@ -14,6 +14,7 @@
 - [期 6](docs/phase-6.md)
 - [期 7](docs/phase-7.md)
 - [期 8](docs/phase-8.md)
+- [期 9](docs/phase-9.md)
 
 ## 研究结论（极简）
 

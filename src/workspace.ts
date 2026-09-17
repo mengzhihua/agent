@@ -8,18 +8,31 @@ export class WorkspaceError extends Error {
   }
 }
 
-export function resolveInWorkspace(workspace: string, target: string): string {
-  const root = path.resolve(workspace);
-  const resolved = path.resolve(root, target);
-  const rel = path.relative(root, resolved);
-  if (rel.startsWith("..") || path.isAbsolute(rel)) {
-    throw new WorkspaceError(`path escapes workspace: ${target}`);
+export function resolveInWorkspace(workspace: string, target: string, extraRoots: string[] = []): string {
+  const primary = path.resolve(workspace);
+  const roots = [primary, ...extraRoots.map((root) => path.resolve(root))];
+  const candidate = path.resolve(primary, target);
+  for (const root of roots) {
+    if (containedRel(root, candidate) !== undefined) return candidate;
   }
-  return resolved;
+  throw new WorkspaceError(`path escapes workspace: ${target}`);
 }
 
-export function toWorkspacePath(workspace: string, absolute: string): string {
-  const rel = path.relative(path.resolve(workspace), absolute);
+export function toWorkspacePath(workspace: string, absolute: string, extraRoots: string[] = []): string {
+  const cwdRel = containedRel(workspace, absolute);
+  if (cwdRel !== undefined) return cwdRel;
+  for (const root of extraRoots) {
+    const rel = containedRel(root, absolute);
+    if (rel === undefined) continue;
+    const rootPosix = path.resolve(root).split(path.sep).join("/");
+    return rel === "." ? rootPosix : `${rootPosix}/${rel}`;
+  }
+  return absolute.split(path.sep).join("/");
+}
+
+function containedRel(root: string, absolute: string): string | undefined {
+  const rel = path.relative(path.resolve(root), path.resolve(absolute));
+  if (rel.startsWith("..") || path.isAbsolute(rel)) return undefined;
   return rel === "" ? "." : rel.split(path.sep).join("/");
 }
 

@@ -14,10 +14,10 @@ export interface FileIo {
   writeText(relPath: string, content: string): Promise<void>;
 }
 
-export function diskFileIo(workspace: string): FileIo {
+export function diskFileIo(workspace: string, extraRoots: string[] = []): FileIo {
   return {
     async readText(relPath) {
-      const abs = resolveInWorkspace(workspace, relPath);
+      const abs = resolveInWorkspace(workspace, relPath, extraRoots);
       try {
         const info = await fsp.stat(abs);
         if (!info.isFile()) throw new Error(`not a file: ${relPath}`);
@@ -31,15 +31,22 @@ export function diskFileIo(workspace: string): FileIo {
       }
     },
     async writeText(relPath, content) {
-      const abs = resolveInWorkspace(workspace, relPath);
+      const abs = resolveInWorkspace(workspace, relPath, extraRoots);
       await fsp.mkdir(path.dirname(abs), { recursive: true });
       await fsp.writeFile(abs, content, "utf8");
     },
   };
 }
 
-export function formatNumbered(workspace: string, relPath: string, raw: string, offset?: number, limit?: number): string {
-  const abs = resolveInWorkspace(workspace, relPath);
+export function formatNumbered(
+  workspace: string,
+  relPath: string,
+  raw: string,
+  offset?: number,
+  limit?: number,
+  extraRoots: string[] = [],
+): string {
+  const abs = resolveInWorkspace(workspace, relPath, extraRoots);
   const lines = raw.split("\n");
   const start = Math.max((offset ?? 1) - 1, 0);
   const end = limit ? Math.min(start + limit, lines.length) : lines.length;
@@ -48,7 +55,7 @@ export function formatNumbered(workspace: string, relPath: string, raw: string, 
     const n = String(start + i + 1).padStart(6, " ");
     return `${n}|${line}`;
   });
-  const header = `${toWorkspacePath(workspace, abs)} (${lines.length} lines)`;
+  const header = `${toWorkspacePath(workspace, abs, extraRoots)} (${lines.length} lines)`;
   return [header, ...numbered].join("\n");
 }
 

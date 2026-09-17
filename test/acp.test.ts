@@ -10,6 +10,7 @@ import {
   ACP_PROTOCOL_VERSION,
   bindAcpApprover,
   dispatch,
+  parseAdditionalDirectories,
   parsePermissionOutcome,
 } from "../src/protocol/acp.js";
 import { parseAcpMcpServers } from "../src/protocol/mcp.js";
@@ -63,7 +64,10 @@ describe("ACP-shaped protocol", () => {
     const init = await dispatch(host, sessions, controllers, { jsonrpc: "2.0", id: 1, method: "initialize" }, () => undefined);
     expect(init).toMatchObject({
       protocolVersion: ACP_PROTOCOL_VERSION,
-      agentCapabilities: { loadSession: true },
+      agentCapabilities: {
+        loadSession: true,
+        sessionCapabilities: { additionalDirectories: {} },
+      },
     });
 
     const created = (await dispatch(
@@ -583,6 +587,55 @@ describe("ACP session MCP", () => {
     );
     expect(result).toEqual({ stopReason: "end_turn" });
     expect(JSON.stringify(notes)).toContain("echo:hi");
+    await host.close();
+  });
+});
+
+describe("ACP additionalDirectories", () => {
+  it("keeps only unique absolute paths", () => {
+    expect(parseAdditionalDirectories(["/tmp/a", "/tmp/a/", "relative", 1, "/tmp/b"])).toEqual([
+      path.resolve("/tmp/a"),
+      path.resolve("/tmp/b"),
+    ]);
+  });
+
+  it("lets read touch a file in an extra root", async () => {
+    const extra = fs.mkdtempSync(path.join(os.tmpdir(), "agent-acp-extra-"));
+    fs.writeFileSync(path.join(extra, "lib.ts"), "export const n = 1;\n");
+    const provider = new ScriptedProvider([
+      { toolCalls: [{ id: "c1", name: "read", arguments: { path: path.join(extra, "lib.ts") } }] },
+      { text: "saw lib" },
+    ]);
+    const host = await hostWith(provider);
+    const sessions = new Set<string>();
+    const controllers = new Map<string, AbortController>();
+    const created = (await dispatch(
+      host,
+      sessions,
+      controllers,
+      {
+        jsonrpc: "2.0",
+        id: 1,
+        method: "session/new",
+        params: { additionalDirectories: [extra] },
+      },
+      () => undefined,
+    )) as { sessionId: string };
+
+    const notes: unknown[] = [];
+    await dispatch(
+      host,
+      sessions,
+      controllers,
+      {
+        jsonrpc: "2.0",
+        id: 2,
+        method: "session/prompt",
+        params: { sessionId: created.sessionId, prompt: "read lib" },
+      },
+      (note) => notes.push(note),
+    );
+    expect(JSON.stringify(notes)).toContain("export const n = 1");
     await host.close();
   });
 });

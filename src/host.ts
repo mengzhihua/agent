@@ -109,6 +109,12 @@ export class AgentHost {
     return id;
   }
 
+  setSessionRoots(sessionId: string, extraRoots: string[]): void {
+    const runtime = this.runtimeFor(sessionId);
+    runtime.extraRoots = extraRoots;
+    runtime.files = diskFileIo(runtime.workspace, extraRoots);
+  }
+
   resume(sessionId: string, cwd?: string): void {
     if (!this.store.exists(sessionId)) {
       throw new Error(`session not found: ${sessionId}`);
@@ -116,7 +122,7 @@ export class AgentHost {
     if (cwd) this.setWorkspace(cwd);
     const runtime = this.runtimeFor(sessionId);
     runtime.workspace = this.config.workspace;
-    runtime.files = diskFileIo(this.config.workspace);
+    runtime.files = diskFileIo(runtime.workspace, runtime.extraRoots);
   }
 
   async *prompt(sessionId: string, userText: string, signal: AbortSignal): AsyncGenerator<LoopEvent> {

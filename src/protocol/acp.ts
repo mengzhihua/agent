@@ -221,8 +221,9 @@ export async function dispatch(
           loadSession: true,
           promptCapabilities: { image: false, audio: false, embeddedContext: false },
           mcpCapabilities: { http: true, sse: false },
+          sessionCapabilities: { additionalDirectories: {} },
         },
-        agentInfo: { name: "agent", version: "0.9.0" },
+        agentInfo: { name: "agent", version: "0.10.0" },
         authMethods: [],
       };
     case "authenticate":
@@ -230,6 +231,7 @@ export async function dispatch(
     case "session/new": {
       const sessionId = host.createSession(sessionCwd(req.params));
       sessions.add(sessionId);
+      host.setSessionRoots(sessionId, parseAdditionalDirectories(req.params?.additionalDirectories));
       await host.attachSessionMcp(sessionId, req.params?.mcpServers);
       return { sessionId, modes: modeState(host.config.runMode) };
     }
@@ -237,6 +239,7 @@ export async function dispatch(
       const sessionId = String(req.params?.sessionId ?? "");
       host.resume(sessionId, sessionCwd(req.params));
       sessions.add(sessionId);
+      host.setSessionRoots(sessionId, parseAdditionalDirectories(req.params?.additionalDirectories));
       await host.attachSessionMcp(sessionId, req.params?.mcpServers);
       return { sessionId, modes: modeState(host.config.runMode) };
     }
@@ -274,6 +277,7 @@ export async function dispatch(
             sessionId,
             request,
             caps: host.clientFs,
+            extraRoots: runtime.extraRoots,
           });
         }
         if (host.clientTerminal) {
@@ -314,6 +318,20 @@ function sessionCwd(params?: Record<string, unknown>): string | undefined {
   const cwd = params?.cwd;
   if (typeof cwd !== "string" || !cwd.trim()) return undefined;
   return path.resolve(cwd);
+}
+
+export function parseAdditionalDirectories(raw: unknown): string[] {
+  if (!Array.isArray(raw)) return [];
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const item of raw) {
+    if (typeof item !== "string" || !item.trim() || !path.isAbsolute(item)) continue;
+    const resolved = path.resolve(item);
+    if (seen.has(resolved)) continue;
+    seen.add(resolved);
+    out.push(resolved);
+  }
+  return out;
 }
 
 function toolKind(name: string): string {

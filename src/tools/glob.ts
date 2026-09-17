@@ -31,8 +31,9 @@ export async function globTool(
   workspace: string,
   pattern: string,
   relPath: string | undefined,
+  extraRoots: string[] = [],
 ): Promise<string> {
-  const cwd = relPath ? resolveInWorkspace(workspace, relPath) : resolveInWorkspace(workspace, ".");
+  const cwd = relPath ? resolveInWorkspace(workspace, relPath, extraRoots) : resolveInWorkspace(workspace, ".", extraRoots);
   const matcher = globToRegExp(pattern.replaceAll("\\", "/"));
   const matches: string[] = [];
 
@@ -45,13 +46,13 @@ export async function globTool(
       const rel = toWorkspacePath(cwd, abs);
       if (entry.isDirectory()) {
         if (matcher.test(rel) || matcher.test(rel + "/")) {
-          matches.push(toWorkspacePath(workspace, abs));
+          matches.push(toWorkspacePath(workspace, abs, extraRoots));
         }
         await walk(abs);
         continue;
       }
       if (matcher.test(rel)) {
-        matches.push(toWorkspacePath(workspace, abs));
+        matches.push(toWorkspacePath(workspace, abs, extraRoots));
       }
     }
   }

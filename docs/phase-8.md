@@ -12,7 +12,7 @@
 4. 单个服务器失败不阻断会话创建
 5. CLI / `.agent/mcp.json` 行为不变
 
-不做（以后）：SSE 传输、`additionalDirectories`、Docker workspace、云端 VM、Playwright 包。
+不做（以后）：SSE 传输、`additionalDirectories` 见 [期 9](phase-9.md)。Docker workspace、云端 VM、Playwright 包。
 
 ## 怎么跑
 

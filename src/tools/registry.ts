@@ -17,6 +17,10 @@ function workspaceOf(ctx: ToolContext): string {
   return ctx.runtime?.workspace ?? ctx.config.workspace;
 }
 
+function extraRootsOf(ctx: ToolContext): string[] {
+  return ctx.runtime?.extraRoots ?? [];
+}
+
 export interface RegistryOptions {
   skills?: SkillIndex;
   extraHandlers?: ToolHandler[];
@@ -37,6 +41,7 @@ export function createBuiltinTools(config: AgentConfig, options: RegistryOptions
           asOptionalNumber(args, "offset"),
           asOptionalNumber(args, "limit"),
           ctx.runtime?.files,
+          extraRootsOf(ctx),
         ),
     },
     {
@@ -49,16 +54,18 @@ export function createBuiltinTools(config: AgentConfig, options: RegistryOptions
           typeof args.glob === "string" ? args.glob : undefined,
           asOptionalNumber(args, "max_matches") ?? 50,
           ctx.signal,
+          extraRootsOf(ctx),
         ),
     },
     {
       definition: globDefinition(config),
       execute: async (args, ctx) =>
-        globTool(workspaceOf(ctx), asString(args, "pattern"), typeof args.path === "string" ? args.path : undefined),
+        globTool(workspaceOf(ctx), asString(args, "pattern"), typeof args.path === "string" ? args.path : undefined, extraRootsOf(ctx)),
     },
     {
       definition: applyPatchDefinition(config),
-      execute: async (args, ctx) => applyPatchTool(workspaceOf(ctx), asString(args, "path"), args, ctx.runtime?.files),
+      execute: async (args, ctx) =>
+        applyPatchTool(workspaceOf(ctx), asString(args, "path"), args, ctx.runtime?.files, extraRootsOf(ctx)),
     },
     {
       definition: shellDefinition(config),
@@ -75,6 +82,7 @@ export function createBuiltinTools(config: AgentConfig, options: RegistryOptions
               ctx.runtime?.onTerminal && ctx.callId
                 ? (terminalId) => ctx.runtime!.onTerminal!(ctx.callId!, terminalId)
                 : undefined,
+            extraRoots: extraRootsOf(ctx),
           },
         ),
     },
