@@ -1,4 +1,4 @@
-import type { ApprovalMode, ApprovalRequest, Approver, Risk, RunMode } from "../types.js";
+import type { ApprovalMode, ApprovalRequest, Approver, Risk, RunMode, SandboxBackend } from "../types.js";
 
 export const TOOL_RISK: Record<string, Risk> = {
   read: "read",
@@ -42,9 +42,18 @@ export function isMutatingTool(tool: string, args?: unknown): boolean {
   return risk === "write" || risk === "exec";
 }
 
-export function defaultDecision(tool: string, mode: ApprovalMode, args?: unknown): "allow" | "ask" {
+const CONFINED_AUTO = new Set(["apply_patch", "shell", "artifact"]);
+
+export function defaultDecision(
+  tool: string,
+  mode: ApprovalMode,
+  args?: unknown,
+  sandbox: SandboxBackend = "none",
+): "allow" | "ask" {
   if (mode === "auto") return "allow";
-  return riskFor(tool, args) === "read" ? "allow" : "ask";
+  if (riskFor(tool, args) === "read") return "allow";
+  if (sandbox !== "none" && CONFINED_AUTO.has(tool)) return "allow";
+  return "ask";
 }
 
 export function autoApprover(): Approver {
@@ -78,11 +87,12 @@ export async function decidePermission(
   mode: ApprovalMode,
   approver: Approver,
   runMode: RunMode = "default",
+  sandbox: SandboxBackend = "none",
 ): Promise<{ decision: "allow" | "deny"; summary: string }> {
   const summary = summarizeArgs(tool, args);
   if (runMode === "plan" && isMutatingTool(tool, args)) {
     return { decision: "deny", summary: `plan mode blocked ${summary}` };
   }
-  if (defaultDecision(tool, mode, args) === "allow") return { decision: "allow", summary };
+  if (defaultDecision(tool, mode, args, sandbox) === "allow") return { decision: "allow", summary };
   return { decision: await approver({ tool, risk: riskFor(tool, args), arguments: args, summary } satisfies ApprovalRequest), summary };
 }

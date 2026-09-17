@@ -1,6 +1,7 @@
 import os from "node:os";
 import path from "node:path";
-import type { AgentConfig, ApprovalMode, ProviderName, RunMode } from "./types.js";
+import { detectSandboxBackend } from "./sandbox/plan.js";
+import type { AgentConfig, ApprovalMode, ProviderName, RunMode, SandboxMode } from "./types.js";
 
 export function agentHome(): string {
   return process.env.AGENT_HOME ?? path.join(os.homedir(), ".agent");
@@ -30,7 +31,7 @@ function defaultModel(provider: ProviderName): string {
 
 export function loadConfig(overrides: Partial<AgentConfig> = {}): AgentConfig {
   const provider = overrides.provider ?? detectProvider();
-  return {
+  const config: AgentConfig = {
     workspace: path.resolve(overrides.workspace ?? process.cwd()),
     model: overrides.model ?? defaultModel(provider),
     provider,
@@ -49,5 +50,9 @@ export function loadConfig(overrides: Partial<AgentConfig> = {}): AgentConfig {
         process.env.AGENT_ARTIFACTS ??
         path.join(path.resolve(overrides.workspace ?? process.cwd()), "artifacts"),
     ),
+    sandbox: (overrides.sandbox ?? (process.env.AGENT_SANDBOX as SandboxMode | undefined) ?? "auto") as SandboxMode,
+    sandboxBackend: "none",
   };
+  config.sandboxBackend = overrides.sandboxBackend ?? detectSandboxBackend(config.sandbox);
+  return config;
 }

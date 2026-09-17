@@ -1,0 +1,21 @@
+{
+  "name": "broken-add",
+  "workspace": "../fixtures/broken-add",
+  "steps": [
+    { "name": "glob", "arguments": { "pattern": "*.mjs" } },
+    { "name": "read", "arguments": { "path": "add.mjs" } },
+    {
+      "name": "apply_patch",
+      "arguments": {
+        "path": "add.mjs",
+        "old_string": "return a - b;",
+        "new_string": "return a + b;"
+      }
+    },
+    { "name": "shell", "arguments": { "command": "node add.test.mjs" } }
+  ],
+  "assert": {
+    "fileContains": { "add.mjs": "return a + b;" },
+    "notFileContains": { "add.mjs": "return a - b;" }
+  }
+}
