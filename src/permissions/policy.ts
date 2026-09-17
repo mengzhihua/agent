@@ -88,11 +88,15 @@ export async function decidePermission(
   approver: Approver,
   runMode: RunMode = "default",
   sandbox: SandboxBackend = "none",
+  callId?: string,
 ): Promise<{ decision: "allow" | "deny"; summary: string }> {
   const summary = summarizeArgs(tool, args);
   if (runMode === "plan" && isMutatingTool(tool, args)) {
     return { decision: "deny", summary: `plan mode blocked ${summary}` };
   }
   if (defaultDecision(tool, mode, args, sandbox) === "allow") return { decision: "allow", summary };
-  return { decision: await approver({ tool, risk: riskFor(tool, args), arguments: args, summary } satisfies ApprovalRequest), summary };
+  return {
+    decision: await approver({ tool, risk: riskFor(tool, args), arguments: args, summary, callId } satisfies ApprovalRequest),
+    summary,
+  };
 }

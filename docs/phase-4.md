@@ -12,7 +12,7 @@
 4. `browser screenshot` 在 Chrome 下存 PNG，HTML 驱动仍存 HTML
 5. 默认 `auto`：找到 Chrome 就用，否则 HtmlDriver
 
-不做（以后）：Playwright 包、Docker workspace、云端 VM、完整 Zed ACP。
+不做（以后）：Playwright 包、Docker workspace、云端 VM。编辑器协议见 [期 5](phase-5.md)。
 
 ## 怎么跑
 

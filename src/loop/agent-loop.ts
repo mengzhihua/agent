@@ -109,6 +109,7 @@ export async function* runTurn(options: RunTurnOptions): AsyncGenerator<LoopEven
           approver,
           config.runMode,
           config.sandboxBackend,
+          call.id,
         );
         yield { type: "permission", tool: call.name, decision: permission.decision, summary: permission.summary };
 

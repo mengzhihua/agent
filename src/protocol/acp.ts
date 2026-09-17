@@ -1,6 +1,7 @@
 import { stdin, stdout, stderr } from "node:process";
 import type { AgentHost } from "../host.js";
-import type { LoopEvent } from "../types.js";
+import type { ApprovalRequest, LoopEvent, Risk, RunMode } from "../types.js";
+import { encodeMessage, extractMessages, type Framing } from "./framing.js";
 
 interface RpcRequest {
   jsonrpc: "2.0";
@@ -16,32 +17,157 @@ interface RpcResponse {
   error?: { code: number; message: string };
 }
 
+export const ACP_PROTOCOL_VERSION = 1;
+
+export const SESSION_MODES = [
+  { id: "execute", name: "Execute", description: "Edit files and run tools in the workspace." },
+  { id: "plan", name: "Plan", description: "Read-only research, then update_plan." },
+] as const;
+
+export type NotifyFn = (params: unknown) => void;
+export type RequestFn = (method: string, params: unknown) => Promise<unknown>;
+
+export function modeState(runMode: RunMode): { currentModeId: string; availableModes: typeof SESSION_MODES } {
+  return {
+    currentModeId: runMode === "plan" ? "plan" : "execute",
+    availableModes: SESSION_MODES,
+  };
+}
+
+export function parseModeId(raw: unknown): RunMode {
+  const id = String(raw ?? "");
+  if (id === "plan" || id === "architect") return "plan";
+  return "default";
+}
+
+export function permissionKind(risk: Risk): string {
+  if (risk === "write") return "edit";
+  if (risk === "exec") return "execute";
+  if (risk === "network") return "fetch";
+  return "read";
+}
+
+export function parsePermissionOutcome(raw: unknown): "allow" | "deny" {
+  if (!raw || typeof raw !== "object") return "deny";
+  const root = raw as Record<string, unknown>;
+  const outcome = root.outcome ?? raw;
+  if (outcome === "allow" || outcome === "selected") return "allow";
+  if (outcome === "deny" || outcome === "reject" || outcome === "cancelled") return "deny";
+  if (outcome && typeof outcome === "object") {
+    const tagged = outcome as Record<string, unknown>;
+    const tag = String(tagged.outcome ?? tagged.type ?? "");
+    if (tag === "cancelled" || tag === "rejected") return "deny";
+    const optionId = String(tagged.optionId ?? tagged.option_id ?? "");
+    if (tag === "selected" && optionId.startsWith("allow")) return "allow";
+    if (optionId.startsWith("allow")) return "allow";
+    if (optionId.startsWith("reject") || optionId.startsWith("deny")) return "deny";
+  }
+  if (typeof root.optionId === "string" && root.optionId.startsWith("allow")) return "allow";
+  return "deny";
+}
+
+export function bindAcpApprover(host: AgentHost, sessionId: string, request: RequestFn): void {
+  host.approver = async (approval: ApprovalRequest) => {
+    const raw = await request("session/request_permission", {
+      sessionId,
+      toolCall: {
+        toolCallId: approval.callId ?? approval.tool,
+        title: approval.summary,
+        kind: permissionKind(approval.risk),
+        status: "pending",
+        rawInput: approval.arguments,
+      },
+      options: [
+        { optionId: "allow-once", name: "Allow", kind: "allow_once" },
+        { optionId: "reject-once", name: "Reject", kind: "reject_once" },
+      ],
+    });
+    return parsePermissionOutcome(raw);
+  };
+  host.askUser = async ({ question, choices }) => {
+    const options =
+      choices?.length && choices.length > 0
+        ? choices.map((choice, i) => ({
+            optionId: `allow-choice-${i}`,
+            name: choice,
+            kind: "allow_once" as const,
+          }))
+        : [
+            { optionId: "allow-once", name: "Continue", kind: "allow_once" as const },
+            { optionId: "reject-once", name: "Cancel", kind: "reject_once" as const },
+          ];
+    const raw = await request("session/request_permission", {
+      sessionId,
+      toolCall: {
+        toolCallId: "ask_user",
+        title: question,
+        kind: "other",
+        status: "pending",
+      },
+      options,
+    });
+    if (parsePermissionOutcome(raw) === "deny") return "cancelled";
+    const optionId = selectedOptionId(raw);
+    const hit = options.find((option) => option.optionId === optionId);
+    return hit?.name ?? "ok";
+  };
+}
+
+function selectedOptionId(raw: unknown): string | undefined {
+  if (!raw || typeof raw !== "object") return undefined;
+  const root = raw as Record<string, unknown>;
+  if (typeof root.optionId === "string") return root.optionId;
+  const outcome = root.outcome;
+  if (outcome && typeof outcome === "object" && typeof (outcome as { optionId?: unknown }).optionId === "string") {
+    return (outcome as { optionId: string }).optionId;
+  }
+  return undefined;
+}
+
 /**
- * ACP-shaped JSON-RPC over NDJSON stdio.
- * This is the reserved client protocol: CLI, a future TUI, and editors
- * should all drive the same AgentHost through these methods.
- * It is intentionally a subset, not a claim of full Zed ACP compatibility.
+ * ACP-shaped JSON-RPC over stdio (NDJSON or LSP Content-Length).
+ * Same AgentHost as the CLI. Not a claim of full Zed registry compatibility.
  */
 export async function runAcpStdio(host: AgentHost): Promise<void> {
-  let buffer = "";
   const sessions = new Set<string>();
   const controllers = new Map<string, AbortController>();
+  const pending = new Map<string | number, { resolve: (value: unknown) => void; reject: (err: Error) => void }>();
+  let framing: Framing | undefined;
+  let nextId = 1;
+  let buffer = "";
 
   const write = (msg: unknown) => {
-    stdout.write(`${JSON.stringify(msg)}\n`);
+    stdout.write(encodeMessage(msg, framing ?? "ndjson"));
   };
 
-  const handle = async (req: RpcRequest) => {
-    const id = req.id ?? null;
+  const request: RequestFn = (method, params) => {
+    const id = `agent-${nextId++}`;
+    return new Promise((resolve, reject) => {
+      pending.set(id, { resolve, reject });
+      write({ jsonrpc: "2.0", id, method, params });
+    });
+  };
+
+  const handle = async (msg: RpcRequest & RpcResponse) => {
+    if (msg.method === undefined && msg.id !== undefined && msg.id !== null) {
+      const waiter = pending.get(msg.id);
+      if (!waiter) return;
+      pending.delete(msg.id);
+      if (msg.error) waiter.reject(new Error(msg.error.message));
+      else waiter.resolve(msg.result);
+      return;
+    }
+
+    const id = msg.id ?? null;
     try {
-      const result = await dispatch(host, sessions, controllers, req, (note) => {
+      const result = await dispatch(host, sessions, controllers, msg, (note) => {
         write({ jsonrpc: "2.0", method: "session/update", params: note });
-      });
-      if (req.id !== undefined) {
+      }, request);
+      if (msg.id !== undefined) {
         write({ jsonrpc: "2.0", id, result } satisfies RpcResponse);
       }
     } catch (err) {
-      if (req.id === undefined) return;
+      if (msg.id === undefined) return;
       write({
         jsonrpc: "2.0",
         id,
@@ -53,16 +179,15 @@ export async function runAcpStdio(host: AgentHost): Promise<void> {
   stdin.setEncoding("utf8");
   stdin.on("data", (chunk) => {
     buffer += chunk;
-    const lines = buffer.split("\n");
-    buffer = lines.pop() ?? "";
-    for (const line of lines) {
-      const trimmed = line.trim();
-      if (!trimmed) continue;
-      try {
-        void handle(JSON.parse(trimmed) as RpcRequest);
-      } catch (err) {
-        stderr.write(`acp parse error: ${err instanceof Error ? err.message : err}\n`);
+    try {
+      const extracted = extractMessages(buffer, framing);
+      framing = extracted.framing ?? framing;
+      buffer = extracted.rest;
+      for (const message of extracted.messages) {
+        void handle(message as RpcRequest & RpcResponse);
       }
+    } catch (err) {
+      stderr.write(`acp parse error: ${err instanceof Error ? err.message : err}\n`);
     }
   });
 
@@ -70,6 +195,8 @@ export async function runAcpStdio(host: AgentHost): Promise<void> {
     stdin.on("end", () => resolve());
     stdin.on("close", () => resolve());
   });
+  for (const waiter of pending.values()) waiter.reject(new Error("ACP stdin closed"));
+  pending.clear();
   await host.close();
 }
 
@@ -78,25 +205,41 @@ export async function dispatch(
   sessions: Set<string>,
   controllers: Map<string, AbortController>,
   req: RpcRequest,
-  notify: (params: unknown) => void,
+  notify: NotifyFn,
+  request?: RequestFn,
 ): Promise<unknown> {
   switch (req.method) {
     case "initialize":
       return {
-        protocolVersion: "0.1.0",
-        agentCapabilities: { prompt: true, session: true },
-        agentInfo: { name: "agent", version: "0.5.0" },
+        protocolVersion: ACP_PROTOCOL_VERSION,
+        agentCapabilities: {
+          loadSession: true,
+          promptCapabilities: { image: false, audio: false, embeddedContext: false },
+          mcpCapabilities: { http: true, sse: false },
+        },
+        agentInfo: { name: "agent", version: "0.6.0" },
+        authMethods: [],
       };
+    case "authenticate":
+      return {};
     case "session/new": {
       const sessionId = host.createSession();
       sessions.add(sessionId);
-      return { sessionId };
+      return { sessionId, modes: modeState(host.config.runMode) };
     }
     case "session/load": {
       const sessionId = String(req.params?.sessionId ?? "");
       host.resume(sessionId);
       sessions.add(sessionId);
-      return { sessionId };
+      return { sessionId, modes: modeState(host.config.runMode) };
+    }
+    case "session/set_mode": {
+      const sessionId = String(req.params?.sessionId ?? "");
+      if (!sessions.has(sessionId)) throw new Error("unknown session");
+      const modeId = req.params?.modeId ?? req.params?.mode;
+      host.setRunMode(parseModeId(modeId));
+      notify({ sessionId, update: { sessionUpdate: "current_mode_update", currentModeId: modeState(host.config.runMode).currentModeId } });
+      return {};
     }
     case "session/cancel": {
       const sessionId = String(req.params?.sessionId ?? "");
@@ -109,12 +252,20 @@ export async function dispatch(
       const prompt = promptText(req.params?.prompt);
       const controller = new AbortController();
       controllers.set(sessionId, controller);
+      const previousApprover = host.approver;
+      const previousAsk = host.askUser;
+      if (request) {
+        bindAcpApprover(host, sessionId, request);
+        if (host.config.approvalMode === "auto") host.approver = previousApprover;
+      }
       try {
         for await (const event of host.prompt(sessionId, prompt, controller.signal)) {
           notify({ sessionId, update: toAcpUpdate(event) });
         }
-        return { stopReason: "end_turn" };
+        return { stopReason: controller.signal.aborted ? "cancelled" : "end_turn" };
       } finally {
+        host.approver = previousApprover;
+        host.askUser = previousAsk;
         controllers.delete(sessionId);
       }
     }
@@ -154,6 +305,11 @@ export function toAcpUpdate(event: LoopEvent): Record<string, unknown> {
         sessionUpdate: "tool_call_update",
         toolCallId: event.callId,
         status: event.isError ? "failed" : "completed",
+      };
+    case "plan":
+      return {
+        sessionUpdate: "plan",
+        entries: event.steps.map((step) => ({ content: step.title, status: step.status })),
       };
     case "turn-end":
       return { sessionUpdate: "turn_end" };
