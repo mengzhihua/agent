@@ -30,4 +30,43 @@ describe("permissions", () => {
     const result = await decidePermission("apply_patch", { path: "a.ts" }, "auto", autoApprover(), "plan");
     expect(result.decision).toBe("deny");
   });
+
+  it("lets plan mode research the web but blocks saves and clicks", async () => {
+    const fetchOk = await decidePermission(
+      "web_fetch",
+      { url: "http://127.0.0.1/docs" },
+      "auto",
+      autoApprover(),
+      "plan",
+    );
+    expect(fetchOk.decision).toBe("allow");
+    const save = await decidePermission(
+      "web_fetch",
+      { url: "http://127.0.0.1/docs", save: true },
+      "auto",
+      autoApprover(),
+      "plan",
+    );
+    expect(save.decision).toBe("deny");
+    const open = await decidePermission(
+      "browser",
+      { action: "open", url: "http://127.0.0.1/" },
+      "auto",
+      autoApprover(),
+      "plan",
+    );
+    expect(open.decision).toBe("allow");
+    const click = await decidePermission("browser", { action: "click", ref: "e1" }, "auto", autoApprover(), "plan");
+    expect(click.decision).toBe("deny");
+    const list = await decidePermission("artifact", { action: "list" }, "auto", autoApprover(), "plan");
+    expect(list.decision).toBe("allow");
+    const artifactSave = await decidePermission(
+      "artifact",
+      { action: "save", content: "x", filename: "x.txt" },
+      "auto",
+      autoApprover(),
+      "plan",
+    );
+    expect(artifactSave.decision).toBe("deny");
+  });
 });

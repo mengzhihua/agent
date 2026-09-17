@@ -3,6 +3,7 @@ import { HookRunner } from "../hooks/hooks.js";
 import { newId, nowIso } from "../ids.js";
 import { decidePermission } from "../permissions/policy.js";
 import { buildSystemPrompt } from "../prompt/system.js";
+import { createSessionRuntime, type SessionRuntime } from "../runtime.js";
 import type { SessionStore } from "../session/store.js";
 import { parseSteps } from "../tools/extra.js";
 import type { ToolRegistry } from "../tools/registry.js";
@@ -22,12 +23,14 @@ export interface RunTurnOptions {
   signal: AbortSignal;
   skills?: SkillIndex;
   hooks?: HookRunner;
+  runtime?: SessionRuntime;
 }
 
 export async function* runTurn(options: RunTurnOptions): AsyncGenerator<LoopEvent> {
   const { store, sessionId, provider, tools, config, approver, signal } = options;
   const skills = options.skills ?? loadSkills(config.workspace);
   const hooks = options.hooks ?? HookRunner.load(config.workspace);
+  const runtime = options.runtime ?? createSessionRuntime(sessionId, config);
   const userText = injectExplicitSkills(options.userText, skills);
   store.append(sessionId, { type: "user", id: newId("evt"), timestamp: nowIso(), text: userText });
 
@@ -122,9 +125,20 @@ export async function* runTurn(options: RunTurnOptions): AsyncGenerator<LoopEven
         }
 
         const handler = tools.get(call.name);
+        const beforeArtifacts = runtime.artifacts.count();
         const executed = handler
-          ? await runTool(handler, call.arguments, { config, signal })
+          ? await runTool(handler, call.arguments, { config, signal, runtime })
           : { name: call.name, content: `unknown tool: ${call.name}`, isError: true };
+
+        for (const artifact of runtime.artifacts.addedSince(beforeArtifacts)) {
+          store.append(sessionId, {
+            type: "artifact",
+            id: newId("evt"),
+            timestamp: nowIso(),
+            artifact,
+          });
+          yield { type: "artifact", artifact };
+        }
 
         const post = await hooks.postToolUse(
           call.name,

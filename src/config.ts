@@ -44,5 +44,10 @@ export function loadConfig(overrides: Partial<AgentConfig> = {}): AgentConfig {
     shellTimeoutMs: overrides.shellTimeoutMs ?? 60_000,
     shellOutputLimit: overrides.shellOutputLimit ?? 32_768,
     subagentDepth: overrides.subagentDepth ?? 0,
+    artifactsDir: path.resolve(
+      overrides.artifactsDir ??
+        process.env.AGENT_ARTIFACTS ??
+        path.join(path.resolve(overrides.workspace ?? process.cwd()), "artifacts"),
+    ),
   };
 }

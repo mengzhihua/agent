@@ -1,8 +1,10 @@
 import type { AgentConfig, ToolDefinition, ToolResult } from "../types.js";
+import type { SessionRuntime } from "../runtime.js";
 
 export interface ToolContext {
   config: AgentConfig;
   signal: AbortSignal;
+  runtime?: SessionRuntime;
 }
 
 export interface ToolHandler {
@@ -21,6 +23,13 @@ export function asString(args: Record<string, unknown>, key: string, fallback?: 
   const value = args[key];
   if (typeof value === "string") return value;
   if (fallback !== undefined && value === undefined) return fallback;
+  throw new Error(`expected string argument: ${key}`);
+}
+
+export function asOptionalString(args: Record<string, unknown>, key: string): string | undefined {
+  const value = args[key];
+  if (value === undefined) return undefined;
+  if (typeof value === "string") return value;
   throw new Error(`expected string argument: ${key}`);
 }
 

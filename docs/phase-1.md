@@ -15,7 +15,7 @@
 7. 预留客户端协议：`agent acp`，NDJSON JSON-RPC（`initialize` / `session/new` / `session/prompt` / `session/cancel`）
 8. Prompt cache 纪律：内置工具顺序固定；MCP 额外工具按名字排序；plan mode 不删工具
 
-不做（期 2）：浏览器 / computer use、持久云电脑、完整 Zed ACP 注册表兼容、OS 沙箱。
+下一期见 [期 2](phase-2.md)（浏览器、artifacts、ask_user）。不做：持久云电脑、完整 Zed ACP 注册表兼容、OS 沙箱。
 
 ## 项目文件
 

@@ -1,9 +1,9 @@
 {
   "name": "agent",
   "private": true,
-  "version": "0.2.0",
+  "version": "0.3.0",
   "type": "module",
-  "description": "General-purpose agent harness: one tool loop, local workspace, resumable sessions.",
+  "description": "General-purpose agent harness: one tool loop, local workspace, browser, artifacts, HITL.",
   "bin": {
     "agent": "./dist/cli.js"
   },

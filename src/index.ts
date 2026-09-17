@@ -7,3 +7,7 @@ export { autoApprover, denyApprover } from "./permissions/policy.js";
 export { AgentHost } from "./host.js";
 export { loadSkills } from "./context/skills.js";
 export { loadAgentsMd } from "./context/agents-md.js";
+export { ArtifactStore } from "./artifacts/store.js";
+export { BrowserSession } from "./browser/session.js";
+export { HtmlDriver } from "./browser/html.js";
+export { createSessionRuntime } from "./runtime.js";

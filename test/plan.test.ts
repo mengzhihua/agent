@@ -81,4 +81,18 @@ describe("plan mode", () => {
     expect(end?.type === "turn-end" && end.text).toBe("Plan is ready.");
     expect(store.read("p1").some((event) => event.type === "plan")).toBe(true);
   });
+
+  it("blocks artifact save while still allowing a plan", async () => {
+    const workspace = fs.mkdtempSync(path.join(os.tmpdir(), "agent-plan-fetch-"));
+    const provider = new ScriptedProvider([
+      { toolCalls: [{ id: "c1", name: "artifact", arguments: { action: "save", content: "nope", filename: "x.txt" } }] },
+      { toolCalls: [{ id: "c2", name: "update_plan", arguments: { steps: [{ title: "Fetch docs later", status: "pending" }] } }] },
+      { text: "Plan only." },
+    ]);
+    const { events } = await run(workspace, provider);
+    const denied = events.find((event) => event.type === "permission");
+    expect(denied?.type === "permission" && denied.decision).toBe("deny");
+    expect(denied?.type === "permission" && denied.summary).toMatch(/plan mode blocked/);
+    expect(events.some((event) => event.type === "plan")).toBe(true);
+  });
 });

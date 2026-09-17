@@ -7,6 +7,10 @@ import { grepDefinition, grepTool } from "./grep.js";
 import { readDefinition, readFileTool } from "./read.js";
 import { shellDefinition, shellTool } from "./shell.js";
 import { asOptionalNumber, asString, type ToolContext, type ToolHandler } from "./types.js";
+import { artifactTool } from "./artifact.js";
+import { askUserTool } from "./ask_user.js";
+import { browserTool } from "./browser.js";
+import { webFetchHandler } from "./web_fetch.js";
 import { webSearchDefinition, webSearchTool } from "./web_search.js";
 
 export interface RegistryOptions {
@@ -62,6 +66,10 @@ export function createBuiltinTools(config: AgentConfig, options: RegistryOptions
       execute: async (args, ctx) =>
         webSearchTool(asString(args, "query"), asOptionalNumber(args, "count") ?? 5, ctx.signal),
     },
+    webFetchHandler(config),
+    browserTool(config),
+    artifactTool(config),
+    askUserTool(config),
     skillTool(config, skills),
     updatePlanTool(config),
   ];
@@ -71,7 +79,7 @@ export function createBuiltinTools(config: AgentConfig, options: RegistryOptions
   }
 
   if (options.readOnly) {
-    const allowed = new Set(["read", "grep", "glob", "skill", "update_plan"]);
+    const allowed = new Set(["read", "grep", "glob", "skill", "update_plan", "web_search", "web_fetch", "ask_user"]);
     return handlers.filter((handler) => allowed.has(handler.definition.name));
   }
   return handlers;

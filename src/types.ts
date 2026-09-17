@@ -23,6 +23,15 @@ export interface AgentConfig {
   shellTimeoutMs: number;
   shellOutputLimit: number;
   subagentDepth: number;
+  artifactsDir: string;
+}
+
+export interface Artifact {
+  id: string;
+  title: string;
+  kind: "file" | "page" | "screenshot" | "download" | "report";
+  path: string;
+  createdAt: string;
 }
 
 export interface ToolParameterSchema {
@@ -122,6 +131,12 @@ export type SessionEvent =
       timestamp: string;
       steps: PlanStep[];
       explanation?: string;
+    }
+  | {
+      type: "artifact";
+      id: string;
+      timestamp: string;
+      artifact: Artifact;
     };
 
 export type LoopEvent =
@@ -135,6 +150,7 @@ export type LoopEvent =
   | { type: "hook"; hook: string; tool?: string; message: string }
   | { type: "subagent-start"; label: string }
   | { type: "subagent-end"; label: string }
+  | { type: "artifact"; artifact: Artifact }
   | { type: "usage"; inputTokens: number; outputTokens: number }
   | { type: "turn-end"; text: string }
   | { type: "aborted" }

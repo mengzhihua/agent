@@ -85,7 +85,7 @@ export async function dispatch(
       return {
         protocolVersion: "0.1.0",
         agentCapabilities: { prompt: true, session: true },
-        agentInfo: { name: "agent", version: "0.2.0" },
+        agentInfo: { name: "agent", version: "0.3.0" },
       };
     case "session/new": {
       const sessionId = host.createSession();
@@ -157,6 +157,8 @@ export function toAcpUpdate(event: LoopEvent): Record<string, unknown> {
       };
     case "turn-end":
       return { sessionUpdate: "turn_end" };
+    case "artifact":
+      return { sessionUpdate: "artifact", artifact: event.artifact };
     case "aborted":
       return { sessionUpdate: "cancelled" };
     case "error":

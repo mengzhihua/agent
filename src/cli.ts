@@ -7,6 +7,7 @@ import { AgentHost } from "./host.js";
 import { autoApprover } from "./permissions/policy.js";
 import { createProvider } from "./provider/factory.js";
 import { runAcpStdio } from "./protocol/acp.js";
+import type { AskUserFn } from "./runtime.js";
 import { SessionStore } from "./session/store.js";
 import type { Approver, LoopEvent, ProviderName } from "./types.js";
 
@@ -27,9 +28,11 @@ function usage(): string {
   -h, --help             Show help
 
 Environment: OPENAI_API_KEY, OPENAI_BASE_URL, XAI_API_KEY, ANTHROPIC_API_KEY,
-AGENT_MODEL, AGENT_HOME, AGENT_APPROVAL=ask|auto, AGENT_MODE=default|plan
+AGENT_MODEL, AGENT_HOME, AGENT_APPROVAL=ask|auto, AGENT_MODE=default|plan,
+AGENT_ARTIFACTS
 
 Project files: AGENTS.md, .agent/skills/*/SKILL.md, .agent/mcp.json, .agent/hooks.json
+Deliverables land in <workspace>/artifacts (or AGENT_ARTIFACTS).
 `;
 }
 
@@ -171,6 +174,7 @@ async function interactive(host: AgentHost, sessionId: string): Promise<void> {
       } else {
         host.approver = makeReadlineApprover(rl);
       }
+      host.askUser = makeAskUser(rl);
       await renderTurn(host, sessionId, line, running.signal);
       running = null;
     }
@@ -200,6 +204,13 @@ function makeReadlineApprover(rl: ReturnType<typeof createInterface>): Approver 
   return async (request) => {
     const answer = (await rl.question(`Allow ${request.summary}? [y/N] `)).trim().toLowerCase();
     return answer === "y" || answer === "yes" ? "allow" : "deny";
+  };
+}
+
+function makeAskUser(rl: ReturnType<typeof createInterface>): AskUserFn {
+  return async ({ question, choices }) => {
+    const hint = choices?.length ? `\n${choices.map((choice, i) => `  ${i + 1}. ${choice}`).join("\n")}` : "";
+    return (await rl.question(`ask: ${question}${hint}\n> `)).trim();
   };
 }
 
@@ -247,6 +258,9 @@ function printEvent(event: LoopEvent, markText: () => void): void {
       break;
     case "subagent-end":
       stderr.write(`subagent ${event.label} done\n`);
+      break;
+    case "artifact":
+      stderr.write(`artifact ${event.artifact.kind}: ${event.artifact.path}\n`);
       break;
     case "aborted":
       stderr.write("\naborted\n");
