@@ -5,7 +5,7 @@ import { parseArgs } from "node:util";
 import { loadConfig } from "./config.js";
 import { runEvalTarget } from "./eval/run.js";
 import { AgentHost } from "./host.js";
-import { autoApprover } from "./permissions/policy.js";
+import { autoApprover, denyApprover } from "./permissions/policy.js";
 import { createProvider } from "./provider/factory.js";
 import { runAcpStdio } from "./protocol/acp.js";
 import type { AskUserFn } from "./runtime.js";
@@ -46,7 +46,12 @@ async function main(): Promise<void> {
   if (process.argv[2] === "acp") {
     const config = loadConfig();
     const store = new SessionStore(config.sessionDir);
-    const host = await AgentHost.create(config, createProvider(config), store, autoApprover());
+    const host = await AgentHost.create(
+      config,
+      createProvider(config),
+      store,
+      config.approvalMode === "auto" ? autoApprover() : denyApprover(),
+    );
     await runAcpStdio(host);
     return;
   }

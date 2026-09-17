@@ -104,6 +104,7 @@ export type ApprovalRequest = {
   risk: Risk;
   arguments: unknown;
   summary: string;
+  callId?: string;
 };
 
 export type Approver = (request: ApprovalRequest) => Promise<"allow" | "deny">;

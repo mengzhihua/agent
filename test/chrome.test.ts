@@ -21,12 +21,14 @@ async function serve(html: string): Promise<{ url: string; close: () => Promise<
       res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
       res.end(html);
     });
+    server.keepAliveTimeout = 1;
     server.listen(0, "127.0.0.1", () => {
       const { port } = server.address() as AddressInfo;
       resolve({
         url: `http://127.0.0.1:${port}/page`,
         close: () =>
           new Promise((done, fail) => {
+            server.closeAllConnections();
             server.close((err) => (err ? fail(err) : done()));
           }),
       });
@@ -75,6 +77,8 @@ describe.skipIf(!findChrome())("Chrome CDP driver", () => {
         expect(shot.buffer[0]).toBe(0x89);
         expect(shot.buffer.toString("ascii", 1, 4)).toBe("PNG");
       } finally {
+        await driver.close();
+        driver = undefined;
         await server.close();
       }
     },

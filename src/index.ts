@@ -14,3 +14,4 @@ export { ChromeDriver, createBrowserDriver, findChrome } from "./browser/chrome.
 export { createSessionRuntime } from "./runtime.js";
 export { detectSandboxBackend, planShell } from "./sandbox/index.js";
 export { runEvalFile, runEvalTarget } from "./eval/run.js";
+export { dispatch, bindAcpApprover, parsePermissionOutcome } from "./protocol/acp.js";
