@@ -1,7 +1,10 @@
+import path from "node:path";
 import { stdin, stdout, stderr } from "node:process";
 import type { AgentHost } from "../host.js";
 import type { ApprovalRequest, LoopEvent, Risk, RunMode } from "../types.js";
 import { encodeMessage, extractMessages, type Framing } from "./framing.js";
+import { createAcpFileIo, hasClientFs, parseClientCapabilities } from "./fs.js";
+import type { NotifyFn, RequestFn } from "./rpc.js";
 
 interface RpcRequest {
   jsonrpc: "2.0";
@@ -24,8 +27,7 @@ export const SESSION_MODES = [
   { id: "plan", name: "Plan", description: "Read-only research, then update_plan." },
 ] as const;
 
-export type NotifyFn = (params: unknown) => void;
-export type RequestFn = (method: string, params: unknown) => Promise<unknown>;
+export { type NotifyFn, type RequestFn } from "./rpc.js";
 
 export function modeState(runMode: RunMode): { currentModeId: string; availableModes: typeof SESSION_MODES } {
   return {
@@ -210,6 +212,7 @@ export async function dispatch(
 ): Promise<unknown> {
   switch (req.method) {
     case "initialize":
+      host.clientFs = parseClientCapabilities(req.params);
       return {
         protocolVersion: ACP_PROTOCOL_VERSION,
         agentCapabilities: {
@@ -217,19 +220,19 @@ export async function dispatch(
           promptCapabilities: { image: false, audio: false, embeddedContext: false },
           mcpCapabilities: { http: true, sse: false },
         },
-        agentInfo: { name: "agent", version: "0.6.0" },
+        agentInfo: { name: "agent", version: "0.7.0" },
         authMethods: [],
       };
     case "authenticate":
       return {};
     case "session/new": {
-      const sessionId = host.createSession();
+      const sessionId = host.createSession(sessionCwd(req.params));
       sessions.add(sessionId);
       return { sessionId, modes: modeState(host.config.runMode) };
     }
     case "session/load": {
       const sessionId = String(req.params?.sessionId ?? "");
-      host.resume(sessionId);
+      host.resume(sessionId, sessionCwd(req.params));
       sessions.add(sessionId);
       return { sessionId, modes: modeState(host.config.runMode) };
     }
@@ -254,9 +257,19 @@ export async function dispatch(
       controllers.set(sessionId, controller);
       const previousApprover = host.approver;
       const previousAsk = host.askUser;
+      const runtime = host.runtimeFor(sessionId);
+      const previousFiles = runtime.files;
       if (request) {
         bindAcpApprover(host, sessionId, request);
         if (host.config.approvalMode === "auto") host.approver = previousApprover;
+        if (hasClientFs(host.clientFs)) {
+          runtime.files = createAcpFileIo({
+            workspace: runtime.workspace,
+            sessionId,
+            request,
+            caps: host.clientFs,
+          });
+        }
       }
       try {
         for await (const event of host.prompt(sessionId, prompt, controller.signal)) {
@@ -266,12 +279,28 @@ export async function dispatch(
       } finally {
         host.approver = previousApprover;
         host.askUser = previousAsk;
+        runtime.files = previousFiles;
         controllers.delete(sessionId);
       }
     }
     default:
       throw new Error(`unknown method: ${req.method ?? "?"}`);
   }
+}
+
+function sessionCwd(params?: Record<string, unknown>): string | undefined {
+  const cwd = params?.cwd;
+  if (typeof cwd !== "string" || !cwd.trim()) return undefined;
+  return path.resolve(cwd);
+}
+
+function toolKind(name: string): string {
+  if (name === "read") return "read";
+  if (name === "apply_patch") return "edit";
+  if (name === "grep" || name === "glob") return "search";
+  if (name === "shell") return "execute";
+  if (name === "web_search" || name === "web_fetch" || name === "browser") return "fetch";
+  return "other";
 }
 
 export function promptText(prompt: unknown): string {
@@ -298,6 +327,7 @@ export function toAcpUpdate(event: LoopEvent): Record<string, unknown> {
         sessionUpdate: "tool_call",
         toolCallId: event.callId,
         title: event.name,
+        kind: toolKind(event.name),
         status: "in_progress",
       };
     case "tool-end":
@@ -305,6 +335,13 @@ export function toAcpUpdate(event: LoopEvent): Record<string, unknown> {
         sessionUpdate: "tool_call_update",
         toolCallId: event.callId,
         status: event.isError ? "failed" : "completed",
+        rawOutput: event.content,
+        content: [
+          {
+            type: "content",
+            content: { type: "text", text: event.content },
+          },
+        ],
       };
     case "plan":
       return {
