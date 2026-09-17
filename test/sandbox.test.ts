@@ -40,7 +40,6 @@ describe("shell sandbox", () => {
   it("runs in bwrap when available and blocks writes outside the workspace", async () => {
     if (!hasBwrap()) return;
     const workspace = fs.mkdtempSync(path.join(os.tmpdir(), "agent-sbx-"));
-    const outside = path.join(os.tmpdir(), `agent-sbx-escape-${Date.now()}.txt`);
     const config = loadConfig({
       workspace,
       approvalMode: "auto",
@@ -52,9 +51,9 @@ describe("shell sandbox", () => {
     expect(ok).toMatch(/sandbox: bwrap/);
     expect(ok).toMatch(/sandboxed-ok/);
     await expect(
-      shellTool(config, `echo leaked > ${outside}`, undefined, 5_000, new AbortController().signal),
-    ).rejects.toThrow(/Read-only file system|cannot create|exit:/);
-    expect(fs.existsSync(outside)).toBe(false);
+      shellTool(config, "echo leaked > /etc/agent-sandbox-should-not-exist", undefined, 5_000, new AbortController().signal),
+    ).rejects.toThrow(/Read-only file system|cannot create|Permission denied|exit:/);
+    expect(fs.existsSync("/etc/agent-sandbox-should-not-exist")).toBe(false);
   });
 
   it("can be disabled", async () => {
