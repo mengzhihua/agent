@@ -192,22 +192,24 @@ export class ChromeDriver implements BrowserDriver {
 
   private async waitReady(minMs = 0): Promise<void> {
     const start = Date.now();
-    for (let i = 0; i < 50; i++) {
+    const deadline = start + 8_000;
+    while (Date.now() < deadline) {
       try {
-        const state = await this.evaluate<string>("document.readyState");
+        const state = await this.evaluate<string>("document.readyState", 1_500);
         if (state === "complete" && Date.now() - start >= minMs) return;
       } catch {
-        // page may be navigating
+        // page may be navigating, or CDP briefly stalled
       }
       await delay(100);
     }
   }
 
-  private async evaluate<T>(expression: string): Promise<T> {
+  private async evaluate<T>(expression: string, timeoutMs?: number): Promise<T> {
     const result = await this.cdp!.send<{ result: { value?: T } }>(
       "Runtime.evaluate",
       { expression, returnByValue: true },
       this.sessionId,
+      timeoutMs,
     );
     return result.result.value as T;
   }

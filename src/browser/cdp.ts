@@ -8,14 +8,20 @@ export class CdpError extends Error {
   }
 }
 
+const DEFAULT_SEND_TIMEOUT_MS = 15_000;
+
 export class CdpClient {
   private nextId = 1;
-  private readonly pending = new Map<number, { resolve: (value: unknown) => void; reject: (err: Error) => void }>();
+  private readonly pending = new Map<
+    number,
+    { resolve: (value: unknown) => void; reject: (err: Error) => void; timer: ReturnType<typeof setTimeout> }
+  >();
   private readonly listeners = new Map<string, Set<(params: unknown) => void>>();
 
   constructor(private readonly ws: WebSocket) {
     this.ws.addEventListener("message", (event) => {
-      const raw = typeof event.data === "string" ? event.data : String(event.data);
+      const raw = decodeCdpMessage(event.data);
+      if (raw === undefined) return;
       let msg: { id?: number; method?: string; params?: unknown; error?: { message?: string }; result?: unknown };
       try {
         msg = JSON.parse(raw) as typeof msg;
@@ -26,7 +32,8 @@ export class CdpClient {
         const waiter = this.pending.get(msg.id);
         if (!waiter) return;
         this.pending.delete(msg.id);
-        if (msg.error) waiter.reject(new CdpError(msg.error.message ?? "CDP error"));
+        clearTimeout(waiter.timer);
+        if (msg.error) waiter.reject(new CdpError(msg.error.message ?? "CDP error", undefined));
         else waiter.resolve(msg.result);
         return;
       }
@@ -35,17 +42,28 @@ export class CdpClient {
         if (hooks) for (const hook of hooks) hook(msg.params);
       }
     });
-    this.ws.addEventListener("close", () => {
-      for (const waiter of this.pending.values()) waiter.reject(new CdpError("CDP websocket closed"));
-      this.pending.clear();
-    });
+    this.ws.addEventListener("close", () => this.failPending(new CdpError("CDP websocket closed")));
   }
 
-  send<T = unknown>(method: string, params?: unknown, sessionId?: string): Promise<T> {
+  send<T = unknown>(method: string, params?: unknown, sessionId?: string, timeoutMs = DEFAULT_SEND_TIMEOUT_MS): Promise<T> {
     const id = this.nextId++;
     return new Promise<T>((resolve, reject) => {
-      this.pending.set(id, { resolve: (value) => resolve(value as T), reject });
-      this.ws.send(JSON.stringify({ id, method, params, sessionId }));
+      const timer = setTimeout(() => {
+        this.pending.delete(id);
+        reject(new CdpError(`CDP ${method} timed out after ${timeoutMs}ms`, method));
+      }, timeoutMs);
+      this.pending.set(id, {
+        resolve: (value) => resolve(value as T),
+        reject,
+        timer,
+      });
+      try {
+        this.ws.send(JSON.stringify({ id, method, params, sessionId }));
+      } catch (err) {
+        this.pending.delete(id);
+        clearTimeout(timer);
+        reject(err instanceof Error ? err : new CdpError(String(err), method));
+      }
     });
   }
 
@@ -75,9 +93,18 @@ export class CdpClient {
   }
 
   close(): void {
+    this.failPending(new CdpError("CDP websocket closed"));
     if (this.ws.readyState === WebSocket.OPEN || this.ws.readyState === WebSocket.CONNECTING) {
       this.ws.close();
     }
+  }
+
+  private failPending(err: Error): void {
+    for (const waiter of this.pending.values()) {
+      clearTimeout(waiter.timer);
+      waiter.reject(err);
+    }
+    this.pending.clear();
   }
 }
 
@@ -95,4 +122,12 @@ export async function openCdp(url: string): Promise<CdpClient> {
     });
   });
   return new CdpClient(ws);
+}
+
+function decodeCdpMessage(data: unknown): string | undefined {
+  if (typeof data === "string") return data;
+  if (typeof Buffer !== "undefined" && Buffer.isBuffer(data)) return data.toString("utf8");
+  if (data instanceof ArrayBuffer) return Buffer.from(data).toString("utf8");
+  if (ArrayBuffer.isView(data)) return Buffer.from(data.buffer, data.byteOffset, data.byteLength).toString("utf8");
+  return undefined;
 }
