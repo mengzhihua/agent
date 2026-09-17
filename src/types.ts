@@ -4,16 +4,25 @@ export type ApprovalMode = "ask" | "auto";
 
 export type ProviderName = "openai" | "anthropic" | "scripted";
 
+export type RunMode = "default" | "plan";
+
+export interface PlanStep {
+  title: string;
+  status: "pending" | "in_progress" | "completed";
+}
+
 export interface AgentConfig {
   workspace: string;
   model: string;
   provider: ProviderName;
   approvalMode: ApprovalMode;
+  runMode: RunMode;
   compactTokens: number;
   maxToolIterations: number;
   sessionDir: string;
   shellTimeoutMs: number;
   shellOutputLimit: number;
+  subagentDepth: number;
 }
 
 export interface ToolParameterSchema {
@@ -106,7 +115,14 @@ export type SessionEvent =
       content: string;
       isError?: boolean;
     }
-  | { type: "compact"; id: string; timestamp: string; summary: string };
+  | { type: "compact"; id: string; timestamp: string; summary: string }
+  | {
+      type: "plan";
+      id: string;
+      timestamp: string;
+      steps: PlanStep[];
+      explanation?: string;
+    };
 
 export type LoopEvent =
   | { type: "text-delta"; text: string }
@@ -115,6 +131,10 @@ export type LoopEvent =
   | { type: "permission"; tool: string; decision: "allow" | "deny"; summary: string }
   | { type: "compact-start" }
   | { type: "compact-end"; summary: string }
+  | { type: "plan"; steps: PlanStep[]; explanation?: string }
+  | { type: "hook"; hook: string; tool?: string; message: string }
+  | { type: "subagent-start"; label: string }
+  | { type: "subagent-end"; label: string }
   | { type: "usage"; inputTokens: number; outputTokens: number }
   | { type: "turn-end"; text: string }
   | { type: "aborted" }

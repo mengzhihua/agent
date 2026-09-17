@@ -1,0 +1,140 @@
+import { loadSkills, type SkillIndex } from "./context/skills.js";
+import { HookRunner } from "./hooks/hooks.js";
+import { newSessionId, nowIso } from "./ids.js";
+import { runTurn } from "./loop/agent-loop.js";
+import { McpManager } from "./mcp/manager.js";
+import { autoApprover } from "./permissions/policy.js";
+import { SessionStore } from "./session/store.js";
+import type { TaskArgs } from "./tools/extra.js";
+import { ToolRegistry } from "./tools/registry.js";
+import type { AgentConfig, Approver, LoopEvent, Provider, RunMode } from "./types.js";
+
+export class AgentHost {
+  readonly skills: SkillIndex;
+  readonly hooks: HookRunner;
+  readonly tools: ToolRegistry;
+  private constructor(
+    public config: AgentConfig,
+    readonly provider: Provider,
+    readonly store: SessionStore,
+    public approver: Approver,
+    skills: SkillIndex,
+    hooks: HookRunner,
+    tools: ToolRegistry,
+    private readonly mcp: McpManager,
+  ) {
+    this.skills = skills;
+    this.hooks = hooks;
+    this.tools = tools;
+  }
+
+  static async create(
+    config: AgentConfig,
+    provider: Provider,
+    store: SessionStore,
+    approver: Approver,
+    opts: { connectMcp?: boolean } = {},
+  ): Promise<AgentHost> {
+    const skills = loadSkills(config.workspace);
+    const hooks = HookRunner.load(config.workspace);
+    const mcp = opts.connectMcp === false ? new McpManager([]) : await McpManager.connect(config.workspace);
+    const extraHandlers = await mcp.handlers();
+    const hostRef: { host?: AgentHost } = {};
+    const tools = ToolRegistry.create(config, {
+      skills,
+      extraHandlers,
+      runSubagent: (input, signal) => {
+        if (!hostRef.host) throw new Error("host not ready");
+        return hostRef.host.runSubagent(input, signal);
+      },
+    });
+    const host = new AgentHost(config, provider, store, approver, skills, hooks, tools, mcp);
+    hostRef.host = host;
+    return host;
+  }
+
+  setRunMode(runMode: RunMode): void {
+    this.config = { ...this.config, runMode };
+  }
+
+  createSession(): string {
+    const id = newSessionId();
+    this.store.create({
+      type: "session_meta",
+      id,
+      timestamp: nowIso(),
+      cwd: this.config.workspace,
+      model: this.config.model,
+      provider: this.config.provider,
+    });
+    return id;
+  }
+
+  resume(sessionId: string): void {
+    if (!this.store.exists(sessionId)) {
+      throw new Error(`session not found: ${sessionId}`);
+    }
+  }
+
+  async *prompt(sessionId: string, userText: string, signal: AbortSignal): AsyncGenerator<LoopEvent> {
+    yield* runTurn({
+      store: this.store,
+      sessionId,
+      userText,
+      provider: this.provider,
+      tools: this.tools,
+      config: this.config,
+      approver: this.approver,
+      signal,
+      skills: this.skills,
+      hooks: this.hooks,
+    });
+  }
+
+  async runSubagent(input: TaskArgs, signal: AbortSignal): Promise<string> {
+    if (this.config.subagentDepth >= 1) {
+      throw new Error("nested subagents are not allowed");
+    }
+    const childConfig: AgentConfig = {
+      ...this.config,
+      subagentDepth: this.config.subagentDepth + 1,
+      maxToolIterations: Math.min(this.config.maxToolIterations, 20),
+      runMode: "default",
+    };
+    const childId = newSessionId();
+    this.store.create({
+      type: "session_meta",
+      id: childId,
+      timestamp: nowIso(),
+      cwd: childConfig.workspace,
+      model: childConfig.model,
+      provider: childConfig.provider,
+    });
+    const tools = ToolRegistry.create(childConfig, {
+      skills: this.skills,
+      allowTask: false,
+      readOnly: input.subagent_type === "explore",
+    });
+    let summary = "";
+    for await (const event of runTurn({
+      store: this.store,
+      sessionId: childId,
+      userText: input.prompt,
+      provider: this.provider,
+      tools,
+      config: childConfig,
+      approver: this.config.approvalMode === "ask" ? this.approver : autoApprover(),
+      signal,
+      skills: this.skills,
+      hooks: this.hooks,
+    })) {
+      if (event.type === "turn-end") summary = event.text;
+      if (event.type === "error") summary = event.message;
+    }
+    return summary || "(subagent finished with no summary)";
+  }
+
+  async close(): Promise<void> {
+    await this.mcp.close();
+  }
+}

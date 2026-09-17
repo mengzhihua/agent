@@ -1,5 +1,7 @@
+import { SkillIndex } from "../context/skills.js";
 import type { AgentConfig, ToolDefinition } from "../types.js";
 import { applyPatchDefinition, applyPatchTool } from "./apply_patch.js";
+import { skillTool, taskTool, updatePlanTool, type TaskArgs } from "./extra.js";
 import { globDefinition, globTool } from "./glob.js";
 import { grepDefinition, grepTool } from "./grep.js";
 import { readDefinition, readFileTool } from "./read.js";
@@ -7,8 +9,17 @@ import { shellDefinition, shellTool } from "./shell.js";
 import { asOptionalNumber, asString, type ToolContext, type ToolHandler } from "./types.js";
 import { webSearchDefinition, webSearchTool } from "./web_search.js";
 
-export function createBuiltinTools(config: AgentConfig): ToolHandler[] {
-  return [
+export interface RegistryOptions {
+  skills?: SkillIndex;
+  extraHandlers?: ToolHandler[];
+  allowTask?: boolean;
+  readOnly?: boolean;
+  runSubagent?: (input: TaskArgs, signal: AbortSignal) => Promise<string>;
+}
+
+export function createBuiltinTools(config: AgentConfig, options: RegistryOptions = {}): ToolHandler[] {
+  const skills = options.skills ?? new SkillIndex([]);
+  const handlers: ToolHandler[] = [
     {
       definition: readDefinition(config),
       execute: async (args, _ctx) =>
@@ -51,7 +62,19 @@ export function createBuiltinTools(config: AgentConfig): ToolHandler[] {
       execute: async (args, ctx) =>
         webSearchTool(asString(args, "query"), asOptionalNumber(args, "count") ?? 5, ctx.signal),
     },
+    skillTool(config, skills),
+    updatePlanTool(config),
   ];
+
+  if (options.allowTask !== false) {
+    handlers.push(taskTool(config, options.runSubagent));
+  }
+
+  if (options.readOnly) {
+    const allowed = new Set(["read", "grep", "glob", "skill", "update_plan"]);
+    return handlers.filter((handler) => allowed.has(handler.definition.name));
+  }
+  return handlers;
 }
 
 export class ToolRegistry {
@@ -65,13 +88,24 @@ export class ToolRegistry {
     return [...this.byName.values()].map((handler) => handler.definition);
   }
 
+  names(): string[] {
+    return this.definitions().map((definition) => definition.name);
+  }
+
   get(name: string): ToolHandler | undefined {
     return this.byName.get(name);
   }
 
+  static create(config: AgentConfig, options: RegistryOptions = {}): ToolRegistry {
+    const extra = [...(options.extraHandlers ?? [])].sort((a, b) =>
+      a.definition.name.localeCompare(b.definition.name),
+    );
+    return new ToolRegistry([...createBuiltinTools(config, options), ...extra]);
+  }
+
   static builtin(config: AgentConfig): ToolRegistry {
-    return new ToolRegistry(createBuiltinTools(config));
+    return ToolRegistry.create(config);
   }
 }
 
-export type { ToolContext, ToolHandler };
+export type { TaskArgs, ToolContext, ToolHandler };

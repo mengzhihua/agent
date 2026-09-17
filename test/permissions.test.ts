@@ -25,4 +25,9 @@ describe("permissions", () => {
     const result = await decidePermission("apply_patch", { path: "a.ts" }, "auto", autoApprover());
     expect(result.decision).toBe("allow");
   });
+
+  it("blocks mutating tools in plan mode", async () => {
+    const result = await decidePermission("apply_patch", { path: "a.ts" }, "auto", autoApprover(), "plan");
+    expect(result.decision).toBe("deny");
+  });
 });

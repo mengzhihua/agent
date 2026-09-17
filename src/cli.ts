@@ -3,44 +3,58 @@ import { createInterface } from "node:readline/promises";
 import { stdin as input, stdout as output, stderr } from "node:process";
 import { parseArgs } from "node:util";
 import { loadConfig } from "./config.js";
-import { newSessionId, nowIso } from "./ids.js";
-import { runTurn } from "./loop/agent-loop.js";
+import { AgentHost } from "./host.js";
 import { autoApprover } from "./permissions/policy.js";
 import { createProvider } from "./provider/factory.js";
+import { runAcpStdio } from "./protocol/acp.js";
 import { SessionStore } from "./session/store.js";
-import { ToolRegistry } from "./tools/registry.js";
-import type { AgentConfig, Approver, LoopEvent, ProviderName } from "./types.js";
+import type { Approver, LoopEvent, ProviderName } from "./types.js";
 
 function usage(): string {
   return `Usage: agent [options] [prompt]
+       agent acp
 
   -p, --print            Run one prompt and exit
   -y, --yes              Auto-approve write/shell/network tools
+  --plan                 Start in plan mode (read-only + update_plan)
   -w, --workspace <dir>  Workspace root (default: cwd)
   --resume <id>          Continue a session
   --list                 List sessions
   --model <name>         Model id
   --provider <name>      openai | anthropic
   --session-dir <dir>    Transcript directory
+  --no-mcp               Do not start MCP servers
   -h, --help             Show help
 
 Environment: OPENAI_API_KEY, OPENAI_BASE_URL, XAI_API_KEY, ANTHROPIC_API_KEY,
-AGENT_MODEL, AGENT_HOME, AGENT_APPROVAL=ask|auto
+AGENT_MODEL, AGENT_HOME, AGENT_APPROVAL=ask|auto, AGENT_MODE=default|plan
+
+Project files: AGENTS.md, .agent/skills/*/SKILL.md, .agent/mcp.json, .agent/hooks.json
 `;
 }
 
 async function main(): Promise<void> {
+  if (process.argv[2] === "acp") {
+    const config = loadConfig();
+    const store = new SessionStore(config.sessionDir);
+    const host = await AgentHost.create(config, createProvider(config), store, autoApprover());
+    await runAcpStdio(host);
+    return;
+  }
+
   const { values, positionals } = parseArgs({
     allowPositionals: true,
     options: {
       print: { type: "boolean", short: "p", default: false },
       yes: { type: "boolean", short: "y", default: false },
+      plan: { type: "boolean", default: false },
       workspace: { type: "string", short: "w" },
       resume: { type: "string" },
       list: { type: "boolean", default: false },
       model: { type: "string" },
       provider: { type: "string" },
       "session-dir": { type: "string" },
+      "no-mcp": { type: "boolean", default: false },
       help: { type: "boolean", short: "h", default: false },
     },
   });
@@ -55,6 +69,7 @@ async function main(): Promise<void> {
     model: values.model,
     provider: values.provider as ProviderName | undefined,
     approvalMode: values.yes ? "auto" : undefined,
+    runMode: values.plan ? "plan" : undefined,
     sessionDir: values["session-dir"],
   });
   const store = new SessionStore(config.sessionDir);
@@ -73,48 +88,33 @@ async function main(): Promise<void> {
 
   const prompt = positionals.join(" ").trim();
   const print = values.print || prompt.length > 0;
-  const sessionId = values.resume ?? newSessionId();
-  if (values.resume) {
-    if (!store.exists(sessionId)) {
-      throw new Error(`session not found: ${sessionId}`);
+  const approver = values.yes || config.approvalMode === "auto" ? autoApprover() : makeStdinApprover();
+  const host = await AgentHost.create(config, createProvider(config), store, approver, {
+    connectMcp: !values["no-mcp"],
+  });
+
+  try {
+    const sessionId = values.resume ? values.resume : host.createSession();
+    if (values.resume) host.resume(sessionId);
+    stderr.write(`session ${sessionId}  mode ${host.config.runMode}\n`);
+
+    if (print) {
+      if (!prompt) throw new Error("prompt is required with --print");
+      const controller = new AbortController();
+      process.on("SIGINT", () => controller.abort());
+      await renderTurn(host, sessionId, prompt, controller.signal);
+      stderr.write(`\nsession ${sessionId}\n`);
+      return;
     }
-  } else {
-    store.create({
-      type: "session_meta",
-      id: sessionId,
-      timestamp: nowIso(),
-      cwd: config.workspace,
-      model: config.model,
-      provider: config.provider,
-    });
+
+    await interactive(host, sessionId);
+  } finally {
+    await host.close();
   }
-
-  const provider = createProvider(config);
-  const tools = ToolRegistry.builtin(config);
-  stderr.write(`session ${sessionId}\n`);
-
-  if (print) {
-    if (!prompt) throw new Error("prompt is required with --print");
-    const controller = new AbortController();
-    process.on("SIGINT", () => controller.abort());
-    const approver = values.yes || config.approvalMode === "auto" ? autoApprover() : makeStdinApprover();
-    await renderTurn({ store, sessionId, prompt, provider, tools, config, approver, signal: controller.signal });
-    stderr.write(`\nsession ${sessionId}\n`);
-    return;
-  }
-
-  await interactive({ store, sessionId, provider, tools, config });
 }
 
-async function interactive(opts: {
-  store: SessionStore;
-  sessionId: string;
-  provider: ReturnType<typeof createProvider>;
-  tools: ToolRegistry;
-  config: AgentConfig;
-}): Promise<void> {
+async function interactive(host: AgentHost, sessionId: string): Promise<void> {
   const rl = createInterface({ input, output, terminal: true });
-  let approvalMode = opts.config.approvalMode;
   console.log("Type a task. /help for commands. Ctrl+C cancels the current turn.");
   let running: AbortController | null = null;
 
@@ -133,36 +133,45 @@ async function interactive(opts: {
       if (!line) continue;
       if (line === "/quit" || line === "/exit") break;
       if (line === "/help") {
-        console.log("/quit  /yes  /ask  /session");
+        console.log("/quit  /yes  /ask  /plan  /execute  /skills  /session");
         continue;
       }
       if (line === "/session") {
-        console.log(opts.sessionId);
+        console.log(sessionId);
+        continue;
+      }
+      if (line === "/skills") {
+        const names = host.skills.all().map((skill) => `${skill.name}: ${skill.description}`);
+        console.log(names.join("\n") || "(no skills)");
+        continue;
+      }
+      if (line === "/plan") {
+        host.setRunMode("plan");
+        console.log("mode: plan");
+        continue;
+      }
+      if (line === "/execute") {
+        host.setRunMode("default");
+        console.log("mode: execute");
         continue;
       }
       if (line === "/yes") {
-        approvalMode = "auto";
+        host.config = { ...host.config, approvalMode: "auto" };
         console.log("approval: auto");
         continue;
       }
       if (line === "/ask") {
-        approvalMode = "ask";
+        host.config = { ...host.config, approvalMode: "ask" };
         console.log("approval: ask");
         continue;
       }
       running = new AbortController();
-      const config = { ...opts.config, approvalMode };
-      const approver = approvalMode === "auto" ? autoApprover() : makeReadlineApprover(rl);
-      await renderTurn({
-        store: opts.store,
-        sessionId: opts.sessionId,
-        prompt: line,
-        provider: opts.provider,
-        tools: opts.tools,
-        config,
-        approver,
-        signal: running.signal,
-      });
+      if (host.config.approvalMode === "auto") {
+        host.approver = autoApprover();
+      } else {
+        host.approver = makeReadlineApprover(rl);
+      }
+      await renderTurn(host, sessionId, line, running.signal);
       running = null;
     }
   } finally {
@@ -194,27 +203,14 @@ function makeReadlineApprover(rl: ReturnType<typeof createInterface>): Approver 
   };
 }
 
-async function renderTurn(opts: {
-  store: SessionStore;
-  sessionId: string;
-  prompt: string;
-  provider: ReturnType<typeof createProvider>;
-  tools: ToolRegistry;
-  config: AgentConfig;
-  approver: Approver;
-  signal: AbortSignal;
-}): Promise<void> {
+async function renderTurn(
+  host: AgentHost,
+  sessionId: string,
+  prompt: string,
+  signal: AbortSignal,
+): Promise<void> {
   let printed = false;
-  for await (const event of runTurn({
-    store: opts.store,
-    sessionId: opts.sessionId,
-    userText: opts.prompt,
-    provider: opts.provider,
-    tools: opts.tools,
-    config: opts.config,
-    approver: opts.approver,
-    signal: opts.signal,
-  })) {
+  for await (const event of host.prompt(sessionId, prompt, signal)) {
     printEvent(event, () => {
       printed = true;
     });
@@ -239,6 +235,18 @@ function printEvent(event: LoopEvent, markText: () => void): void {
       break;
     case "compact-start":
       stderr.write("\n(compacting context)\n");
+      break;
+    case "plan":
+      stderr.write(`\nplan:\n${event.steps.map((step) => `  [${step.status}] ${step.title}`).join("\n")}\n`);
+      break;
+    case "hook":
+      stderr.write(`hook ${event.hook}: ${event.message}\n`);
+      break;
+    case "subagent-start":
+      stderr.write(`subagent ${event.label}...\n`);
+      break;
+    case "subagent-end":
+      stderr.write(`subagent ${event.label} done\n`);
       break;
     case "aborted":
       stderr.write("\naborted\n");

@@ -1,6 +1,6 @@
 import os from "node:os";
 import path from "node:path";
-import type { AgentConfig, ApprovalMode, ProviderName } from "./types.js";
+import type { AgentConfig, ApprovalMode, ProviderName, RunMode } from "./types.js";
 
 export function agentHome(): string {
   return process.env.AGENT_HOME ?? path.join(os.homedir(), ".agent");
@@ -37,10 +37,12 @@ export function loadConfig(overrides: Partial<AgentConfig> = {}): AgentConfig {
     approvalMode: (overrides.approvalMode ??
       (process.env.AGENT_APPROVAL as ApprovalMode | undefined) ??
       "ask") as ApprovalMode,
+    runMode: overrides.runMode ?? (process.env.AGENT_MODE as RunMode | undefined) ?? "default",
     compactTokens: overrides.compactTokens ?? Number(process.env.AGENT_COMPACT_TOKENS ?? 100_000),
     maxToolIterations: overrides.maxToolIterations ?? 40,
     sessionDir: overrides.sessionDir ?? defaultSessionDir(),
     shellTimeoutMs: overrides.shellTimeoutMs ?? 60_000,
     shellOutputLimit: overrides.shellOutputLimit ?? 32_768,
+    subagentDepth: overrides.subagentDepth ?? 0,
   };
 }

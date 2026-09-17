@@ -1,4 +1,4 @@
-import type { ApprovalMode, ApprovalRequest, Approver, Risk } from "../types.js";
+import type { ApprovalMode, ApprovalRequest, Approver, Risk, RunMode } from "../types.js";
 
 export const TOOL_RISK: Record<string, Risk> = {
   read: "read",
@@ -7,10 +7,20 @@ export const TOOL_RISK: Record<string, Risk> = {
   apply_patch: "write",
   shell: "exec",
   web_search: "network",
+  skill: "read",
+  update_plan: "read",
+  task: "exec",
 };
 
 export function riskFor(tool: string): Risk {
+  if (tool.startsWith("mcp__")) return "exec";
   return TOOL_RISK[tool] ?? "exec";
+}
+
+export function isMutatingTool(tool: string): boolean {
+  if (tool === "update_plan" || tool === "skill") return false;
+  const risk = riskFor(tool);
+  return risk === "write" || risk === "exec";
 }
 
 export function defaultDecision(tool: string, mode: ApprovalMode): "allow" | "ask" {
@@ -38,6 +48,12 @@ export function summarizeArgs(tool: string, args: unknown): string {
   if (tool === "web_search" && typeof record.query === "string") {
     return `web_search: ${record.query}`;
   }
+  if (tool === "task" && typeof record.prompt === "string") {
+    return `task: ${record.prompt}`;
+  }
+  if (tool.startsWith("mcp__")) {
+    return tool;
+  }
   return `${tool} ${JSON.stringify(args)}`;
 }
 
@@ -46,8 +62,12 @@ export async function decidePermission(
   args: unknown,
   mode: ApprovalMode,
   approver: Approver,
+  runMode: RunMode = "default",
 ): Promise<{ decision: "allow" | "deny"; summary: string }> {
   const summary = summarizeArgs(tool, args);
+  if (runMode === "plan" && isMutatingTool(tool)) {
+    return { decision: "deny", summary: `plan mode blocked ${summary}` };
+  }
   if (defaultDecision(tool, mode) === "allow") {
     return { decision: "allow", summary };
   }

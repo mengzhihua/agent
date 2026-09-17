@@ -1,7 +1,9 @@
-import type { AgentConfig, ToolDefinition } from "../types.js";
+import type { AgentConfig } from "../types.js";
+import { loadAgentsMd } from "../context/agents-md.js";
+import { type SkillIndex } from "../context/skills.js";
 
-export function buildSystemPrompt(config: AgentConfig): string {
-  return [
+export function staticSystemPrompt(config: AgentConfig): string {
+  const lines = [
     "You are a general-purpose software agent running inside a local workspace.",
     "You solve tasks by calling tools, observing results, and iterating until the work is done.",
     "",
@@ -9,6 +11,7 @@ export function buildSystemPrompt(config: AgentConfig): string {
     `- Root: ${config.workspace}`,
     `- Platform: ${process.platform}`,
     `- Shell timeout: ${Math.round(config.shellTimeoutMs / 1000)}s`,
+    `- Mode: ${config.runMode}`,
     "",
     "How to work:",
     "- Inspect before editing. Use glob/grep/read instead of guessing file contents.",
@@ -18,7 +21,32 @@ export function buildSystemPrompt(config: AgentConfig): string {
     "- Stay inside the workspace. Do not exfiltrate secrets.",
     "- If blocked, ask a concise follow-up question.",
     "- When finished, summarize what changed and how you verified it.",
-  ].join("\n");
+    "- Use update_plan to keep a visible step list for multi-step work.",
+    "- Use the skill tool to load specialized instructions when a listed skill matches.",
+    "- Use task to spawn an isolated subagent for exploration or a bounded subtask. It cannot spawn further subagents.",
+  ];
+  if (config.runMode === "plan") {
+    lines.push(
+      "",
+      "Plan mode is ON. Do not edit files or run mutating shell commands.",
+      "Research with read-only tools, then call update_plan with a concrete implementation plan.",
+      "Wait for the user to switch to execute mode before making changes.",
+    );
+  }
+  return lines.join("\n");
+}
+
+export function buildSystemPrompt(config: AgentConfig, skills?: SkillIndex): string {
+  const parts = [staticSystemPrompt(config)];
+  const agents = loadAgentsMd(config.workspace);
+  if (agents) {
+    parts.push("", "## Project instructions", agents);
+  }
+  const catalog = skills?.catalog();
+  if (catalog) {
+    parts.push("", catalog);
+  }
+  return parts.join("\n");
 }
 
 export function compactPrompt(): string {

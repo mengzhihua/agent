@@ -61,6 +61,7 @@ export function assembleMessages(events: SessionEvent[]): ModelMessage[] {
         isError: event.isError,
       });
     }
+    // skip session_meta, compact, plan, and unknown events
   }
   return messages;
 }
