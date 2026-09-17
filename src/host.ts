@@ -1,3 +1,4 @@
+import path from "node:path";
 import { ArtifactStore } from "./artifacts/store.js";
 import { createBrowserDriver } from "./browser/chrome.js";
 import { BrowserSession } from "./browser/session.js";
@@ -7,7 +8,9 @@ import { newSessionId, nowIso } from "./ids.js";
 import { runTurn } from "./loop/agent-loop.js";
 import { McpManager } from "./mcp/manager.js";
 import { autoApprover } from "./permissions/policy.js";
+import type { ClientFsCaps } from "./protocol/fs.js";
 import { createSessionRuntime, type AskUserFn, type SessionRuntime } from "./runtime.js";
+import { diskFileIo } from "./files/io.js";
 import { SessionStore } from "./session/store.js";
 import type { TaskArgs } from "./tools/extra.js";
 import { ToolRegistry } from "./tools/registry.js";
@@ -18,6 +21,7 @@ export class AgentHost {
   readonly hooks: HookRunner;
   readonly tools: ToolRegistry;
   askUser?: AskUserFn;
+  clientFs: ClientFsCaps = { readTextFile: false, writeTextFile: false };
   private readonly artifacts: ArtifactStore;
   private readonly runtimes = new Map<string, SessionRuntime>();
 
@@ -68,6 +72,10 @@ export class AgentHost {
     this.config = { ...this.config, runMode };
   }
 
+  setWorkspace(workspace: string): void {
+    this.config = { ...this.config, workspace: path.resolve(workspace) };
+  }
+
   runtimeFor(sessionId: string): SessionRuntime {
     const existing = this.runtimes.get(sessionId);
     if (existing) {
@@ -78,12 +86,14 @@ export class AgentHost {
       artifacts: this.artifacts,
       browser: new BrowserSession(createBrowserDriver(this.config.browserBackend)),
       askUser: this.askUser,
+      workspace: this.config.workspace,
     });
     this.runtimes.set(sessionId, runtime);
     return runtime;
   }
 
-  createSession(): string {
+  createSession(cwd?: string): string {
+    if (cwd) this.setWorkspace(cwd);
     const id = newSessionId();
     this.store.create({
       type: "session_meta",
@@ -97,11 +107,14 @@ export class AgentHost {
     return id;
   }
 
-  resume(sessionId: string): void {
+  resume(sessionId: string, cwd?: string): void {
     if (!this.store.exists(sessionId)) {
       throw new Error(`session not found: ${sessionId}`);
     }
-    this.runtimeFor(sessionId);
+    if (cwd) this.setWorkspace(cwd);
+    const runtime = this.runtimeFor(sessionId);
+    runtime.workspace = this.config.workspace;
+    runtime.files = diskFileIo(this.config.workspace);
   }
 
   async *prompt(sessionId: string, userText: string, signal: AbortSignal): AsyncGenerator<LoopEvent> {

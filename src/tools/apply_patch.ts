@@ -1,5 +1,4 @@
-import fsp from "node:fs/promises";
-import path from "node:path";
+import { diskFileIo, type FileIo } from "../files/io.js";
 import type { AgentConfig } from "../types.js";
 import { resolveInWorkspace, toWorkspacePath } from "../workspace.js";
 
@@ -32,25 +31,18 @@ export async function applyPatchTool(
   workspace: string,
   relPath: string,
   args: Record<string, unknown>,
+  io: FileIo = diskFileIo(workspace),
 ): Promise<string> {
   const abs = resolveInWorkspace(workspace, relPath);
   const edits = collectEdits(args);
-  let existed = true;
-  let content: string;
-  try {
-    content = await fsp.readFile(abs, "utf8");
-  } catch {
-    existed = false;
-    content = "";
-  }
+  const { content, existed } = await io.readText(relPath);
 
   if (!existed) {
     if (edits.some((edit) => edit.old_string.length > 0)) {
       throw new Error(`file does not exist: ${relPath}`);
     }
     const created = edits.map((edit) => edit.new_string).join("");
-    await fsp.mkdir(path.dirname(abs), { recursive: true });
-    await fsp.writeFile(abs, created, "utf8");
+    await io.writeText(relPath, created);
     return `created ${toWorkspacePath(workspace, abs)} (${created.split("\n").length} lines)`;
   }
 
@@ -68,7 +60,7 @@ export async function applyPatchTool(
     }
     next = next.replace(edit.old_string, edit.new_string);
   }
-  await fsp.writeFile(abs, next, "utf8");
+  await io.writeText(relPath, next);
   return `updated ${toWorkspacePath(workspace, abs)}`;
 }
 

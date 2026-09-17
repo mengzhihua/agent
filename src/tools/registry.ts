@@ -13,6 +13,10 @@ import { browserTool } from "./browser.js";
 import { webFetchHandler } from "./web_fetch.js";
 import { webSearchDefinition, webSearchTool } from "./web_search.js";
 
+function workspaceOf(ctx: ToolContext): string {
+  return ctx.runtime?.workspace ?? ctx.config.workspace;
+}
+
 export interface RegistryOptions {
   skills?: SkillIndex;
   extraHandlers?: ToolHandler[];
@@ -26,14 +30,20 @@ export function createBuiltinTools(config: AgentConfig, options: RegistryOptions
   const handlers: ToolHandler[] = [
     {
       definition: readDefinition(config),
-      execute: async (args, _ctx) =>
-        readFileTool(config.workspace, asString(args, "path"), asOptionalNumber(args, "offset"), asOptionalNumber(args, "limit")),
+      execute: async (args, ctx) =>
+        readFileTool(
+          workspaceOf(ctx),
+          asString(args, "path"),
+          asOptionalNumber(args, "offset"),
+          asOptionalNumber(args, "limit"),
+          ctx.runtime?.files,
+        ),
     },
     {
       definition: grepDefinition(config),
       execute: async (args, ctx) =>
         grepTool(
-          config.workspace,
+          workspaceOf(ctx),
           asString(args, "pattern"),
           typeof args.path === "string" ? args.path : undefined,
           typeof args.glob === "string" ? args.glob : undefined,
@@ -43,18 +53,18 @@ export function createBuiltinTools(config: AgentConfig, options: RegistryOptions
     },
     {
       definition: globDefinition(config),
-      execute: async (args, _ctx) =>
-        globTool(config.workspace, asString(args, "pattern"), typeof args.path === "string" ? args.path : undefined),
+      execute: async (args, ctx) =>
+        globTool(workspaceOf(ctx), asString(args, "pattern"), typeof args.path === "string" ? args.path : undefined),
     },
     {
       definition: applyPatchDefinition(config),
-      execute: async (args, _ctx) => applyPatchTool(config.workspace, asString(args, "path"), args),
+      execute: async (args, ctx) => applyPatchTool(workspaceOf(ctx), asString(args, "path"), args, ctx.runtime?.files),
     },
     {
       definition: shellDefinition(config),
       execute: async (args, ctx) =>
         shellTool(
-          config,
+          { ...ctx.config, workspace: workspaceOf(ctx) },
           asString(args, "command"),
           typeof args.cwd === "string" ? args.cwd : undefined,
           asOptionalNumber(args, "timeout_ms"),

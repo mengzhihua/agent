@@ -14,7 +14,7 @@
 6. `session/update` 带上 `plan` 条目
 7. `agent acp` 默认走 ask（`AGENT_APPROVAL=auto` 仍可全放行）
 
-不做（以后）：Docker workspace、云端 VM、ACP `fs/*` / `terminal/*`、Playwright 包。
+不做（以后）：Docker workspace、云端 VM、ACP `terminal/*`、Playwright 包。客户端文件系统见 [期 6](phase-6.md)。
 
 ## 怎么跑
 

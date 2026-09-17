@@ -11,6 +11,7 @@ import {
   dispatch,
   parsePermissionOutcome,
 } from "../src/protocol/acp.js";
+import { parseClientCapabilities } from "../src/protocol/fs.js";
 import { encodeMessage, extractMessages } from "../src/protocol/framing.js";
 import { ScriptedProvider } from "../src/provider/scripted.js";
 import { SessionStore } from "../src/session/store.js";
@@ -193,6 +194,204 @@ describe("bindAcpApprover", () => {
     const host = await hostWith(new ScriptedProvider([{ text: "x" }]));
     bindAcpApprover(host, "s1", async () => ({ outcome: { outcome: "selected", optionId: "allow-once" } }));
     expect(await host.approver({ tool: "shell", risk: "exec", arguments: {}, summary: "shell: ls" })).toBe("allow");
+    await host.close();
+  });
+});
+
+describe("ACP client filesystem", () => {
+  it("parses initialize clientCapabilities.fs", () => {
+    expect(parseClientCapabilities(undefined)).toEqual({ readTextFile: false, writeTextFile: false });
+    expect(
+      parseClientCapabilities({
+        protocolVersion: 1,
+        clientCapabilities: { fs: { readTextFile: true, writeTextFile: true } },
+      }),
+    ).toEqual({ readTextFile: true, writeTextFile: true });
+  });
+
+  it("uses session/new cwd as the workspace", async () => {
+    const host = await hostWith(new ScriptedProvider([{ text: "ok" }]));
+    const sessions = new Set<string>();
+    const controllers = new Map<string, AbortController>();
+    const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "agent-acp-cwd-"));
+    await dispatch(
+      host,
+      sessions,
+      controllers,
+      { jsonrpc: "2.0", id: 1, method: "session/new", params: { cwd } },
+      () => undefined,
+    );
+    expect(host.config.workspace).toBe(path.resolve(cwd));
+    await host.close();
+  });
+
+  it("reads unsaved buffers through fs/read_text_file", async () => {
+    const provider = new ScriptedProvider([
+      { toolCalls: [{ id: "c1", name: "read", arguments: { path: "note.txt" } }] },
+      { text: "saw unsaved" },
+    ]);
+    const host = await hostWith(provider);
+    fs.writeFileSync(path.join(host.config.workspace, "note.txt"), "on disk\n");
+    const sessions = new Set<string>();
+    const controllers = new Map<string, AbortController>();
+    await dispatch(
+      host,
+      sessions,
+      controllers,
+      {
+        jsonrpc: "2.0",
+        id: 1,
+        method: "initialize",
+        params: { protocolVersion: 1, clientCapabilities: { fs: { readTextFile: true } } },
+      },
+      () => undefined,
+    );
+    const created = (await dispatch(
+      host,
+      sessions,
+      controllers,
+      { jsonrpc: "2.0", id: 2, method: "session/new" },
+      () => undefined,
+    )) as { sessionId: string };
+
+    const methods: string[] = [];
+    const notes: unknown[] = [];
+    await dispatch(
+      host,
+      sessions,
+      controllers,
+      {
+        jsonrpc: "2.0",
+        id: 3,
+        method: "session/prompt",
+        params: { sessionId: created.sessionId, prompt: "read note" },
+      },
+      (note) => notes.push(note),
+      async (method, params) => {
+        methods.push(method);
+        expect(method).toBe("fs/read_text_file");
+        expect(JSON.stringify(params)).toContain("note.txt");
+        return { content: "unsaved buffer\n" };
+      },
+    );
+    expect(methods).toEqual(["fs/read_text_file"]);
+    expect(JSON.stringify(notes)).toContain("unsaved buffer");
+    expect(JSON.stringify(notes)).not.toContain("on disk");
+    await host.close();
+  });
+
+  it("writes apply_patch through fs/write_text_file", async () => {
+    const provider = new ScriptedProvider([
+      {
+        toolCalls: [
+          {
+            id: "c1",
+            name: "apply_patch",
+            arguments: { path: "note.txt", old_string: "hello", new_string: "hello world" },
+          },
+        ],
+      },
+      { text: "patched" },
+    ]);
+    const host = await hostWith(provider);
+    const diskPath = path.join(host.config.workspace, "note.txt");
+    fs.writeFileSync(diskPath, "hello");
+    const sessions = new Set<string>();
+    const controllers = new Map<string, AbortController>();
+    await dispatch(
+      host,
+      sessions,
+      controllers,
+      {
+        jsonrpc: "2.0",
+        id: 1,
+        method: "initialize",
+        params: { protocolVersion: 1, clientCapabilities: { fs: { readTextFile: true, writeTextFile: true } } },
+      },
+      () => undefined,
+    );
+    const created = (await dispatch(
+      host,
+      sessions,
+      controllers,
+      { jsonrpc: "2.0", id: 2, method: "session/new" },
+      () => undefined,
+    )) as { sessionId: string };
+
+    const files = new Map<string, string>([[diskPath, "hello"]]);
+    const methods: string[] = [];
+    await dispatch(
+      host,
+      sessions,
+      controllers,
+      {
+        jsonrpc: "2.0",
+        id: 3,
+        method: "session/prompt",
+        params: { sessionId: created.sessionId, prompt: "edit note" },
+      },
+      () => undefined,
+      async (method, params) => {
+        methods.push(method);
+        const row = params as { path?: string; content?: string };
+        if (method === "fs/read_text_file") return { content: files.get(String(row.path)) ?? "" };
+        if (method === "fs/write_text_file") {
+          files.set(String(row.path), String(row.content ?? ""));
+          return null;
+        }
+        throw new Error(`unexpected ${method}`);
+      },
+    );
+    expect(methods).toEqual(["fs/read_text_file", "fs/write_text_file"]);
+    expect(files.get(diskPath)).toBe("hello world");
+    expect(fs.readFileSync(diskPath, "utf8")).toBe("hello");
+    await host.close();
+  });
+
+  it("does not call fs methods when the client omitted the capability", async () => {
+    const provider = new ScriptedProvider([
+      { toolCalls: [{ id: "c1", name: "read", arguments: { path: "note.txt" } }] },
+      { text: "from disk" },
+    ]);
+    const host = await hostWith(provider);
+    fs.writeFileSync(path.join(host.config.workspace, "note.txt"), "disk only\n");
+    const sessions = new Set<string>();
+    const controllers = new Map<string, AbortController>();
+    await dispatch(
+      host,
+      sessions,
+      controllers,
+      { jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: 1 } },
+      () => undefined,
+    );
+    const created = (await dispatch(
+      host,
+      sessions,
+      controllers,
+      { jsonrpc: "2.0", id: 2, method: "session/new" },
+      () => undefined,
+    )) as { sessionId: string };
+
+    const methods: string[] = [];
+    const notes: unknown[] = [];
+    await dispatch(
+      host,
+      sessions,
+      controllers,
+      {
+        jsonrpc: "2.0",
+        id: 3,
+        method: "session/prompt",
+        params: { sessionId: created.sessionId, prompt: "read note" },
+      },
+      (note) => notes.push(note),
+      async (method) => {
+        methods.push(method);
+        return { outcome: { outcome: "selected", optionId: "allow-once" } };
+      },
+    );
+    expect(methods).toEqual([]);
+    expect(JSON.stringify(notes)).toContain("disk only");
     await host.close();
   });
 });

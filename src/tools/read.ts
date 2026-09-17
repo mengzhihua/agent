@@ -1,32 +1,19 @@
+import { diskFileIo, formatNumbered, MAX_TEXT_FILE_BYTES, type FileIo } from "../files/io.js";
 import type { AgentConfig } from "../types.js";
-import { resolveInWorkspace, toWorkspacePath } from "../workspace.js";
 
 export async function readFileTool(
   workspace: string,
   relPath: string,
   offset?: number,
   limit?: number,
+  io: FileIo = diskFileIo(workspace),
 ): Promise<string> {
-  const abs = resolveInWorkspace(workspace, relPath);
-  const { readFile, stat } = await import("node:fs/promises");
-  const info = await stat(abs);
-  if (!info.isFile()) {
-    throw new Error(`not a file: ${relPath}`);
+  const { content, existed } = await io.readText(relPath);
+  if (!existed) throw new Error(`not a file: ${relPath}`);
+  if (Buffer.byteLength(content, "utf8") > MAX_TEXT_FILE_BYTES) {
+    throw new Error(`file too large to read (${Buffer.byteLength(content, "utf8")} bytes): ${relPath}`);
   }
-  if (info.size > 512 * 1024) {
-    throw new Error(`file too large to read (${info.size} bytes): ${relPath}`);
-  }
-  const raw = await readFile(abs, "utf8");
-  const lines = raw.split("\n");
-  const start = Math.max((offset ?? 1) - 1, 0);
-  const end = limit ? Math.min(start + limit, lines.length) : lines.length;
-  const slice = lines.slice(start, end);
-  const numbered = slice.map((line, i) => {
-    const n = String(start + i + 1).padStart(6, " ");
-    return `${n}|${line}`;
-  });
-  const header = `${toWorkspacePath(workspace, abs)} (${lines.length} lines)`;
-  return [header, ...numbered].join("\n");
+  return formatNumbered(workspace, relPath, content, offset, limit);
 }
 
 export function readDefinition(config: AgentConfig) {
