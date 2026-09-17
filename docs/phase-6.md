@@ -13,7 +13,7 @@
 5. 没有对应能力时退回磁盘 `FileIo`（CLI 行为不变）
 6. `grep` / `glob` / `shell` 仍走工作区磁盘
 
-不做（以后）：ACP `terminal/*`、session MCP 列表、`additionalDirectories`、Docker workspace、云端 VM、Playwright 包。
+不做（以后）：ACP `terminal/*` 见 [期 7](phase-7.md)。session MCP 列表、`additionalDirectories`、Docker workspace、云端 VM、Playwright 包。
 
 ## 怎么跑
 

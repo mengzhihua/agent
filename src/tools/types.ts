@@ -5,6 +5,7 @@ export interface ToolContext {
   config: AgentConfig;
   signal: AbortSignal;
   runtime?: SessionRuntime;
+  callId?: string;
 }
 
 export interface ToolHandler {

@@ -129,7 +129,7 @@ export async function* runTurn(options: RunTurnOptions): AsyncGenerator<LoopEven
         const handler = tools.get(call.name);
         const beforeArtifacts = runtime.artifacts.count();
         const executed = handler
-          ? await runTool(handler, call.arguments, { config, signal, runtime })
+          ? await runTool(handler, call.arguments, { config, signal, runtime, callId: call.id })
           : { name: call.name, content: `unknown tool: ${call.name}`, isError: true };
 
         for (const artifact of runtime.artifacts.addedSince(beforeArtifacts)) {

@@ -42,6 +42,59 @@ describe("read/grep/glob/shell", () => {
       shellTool(config, "pwd", "../", 1_000, new AbortController().signal),
     ).rejects.toThrow(/escapes workspace/);
   });
+
+  it("runs shell via an ACP terminal client", async () => {
+    const config = loadConfig({ workspace: fixture, approvalMode: "auto", sessionDir: os.tmpdir(), sandbox: "none" });
+    const methods: string[] = [];
+    const out = await shellTool(config, "echo hi", undefined, 5_000, new AbortController().signal, {
+      terminal: {
+        create: async (input) => {
+          methods.push("create");
+          expect(input.args).toEqual(["-c", "echo hi"]);
+          expect(input.cwd).toBe(fixture);
+          return "term_1";
+        },
+        waitForExit: async () => {
+          methods.push("wait");
+          return { exitCode: 0, signal: null };
+        },
+        output: async () => {
+          methods.push("output");
+          return { output: "hi\n", truncated: false, exitStatus: { exitCode: 0, signal: null } };
+        },
+        kill: async () => {
+          methods.push("kill");
+        },
+        release: async () => {
+          methods.push("release");
+        },
+      },
+    });
+    expect(out).toMatch(/hi/);
+    expect(out).toMatch(/client-terminal/);
+    expect(methods).toEqual(["create", "wait", "output", "release"]);
+  });
+
+  it("kills the client terminal on timeout", async () => {
+    const config = loadConfig({ workspace: fixture, approvalMode: "auto", sessionDir: os.tmpdir(), sandbox: "none" });
+    const methods: string[] = [];
+    await expect(
+      shellTool(config, "sleep 30", undefined, 20, new AbortController().signal, {
+        terminal: {
+          create: async () => "term_1",
+          waitForExit: () => new Promise(() => undefined),
+          output: async () => ({ output: "partial\n", truncated: false }),
+          kill: async () => {
+            methods.push("kill");
+          },
+          release: async () => {
+            methods.push("release");
+          },
+        },
+      }),
+    ).rejects.toThrow(/timeout/);
+    expect(methods).toEqual(["kill", "release"]);
+  });
 });
 
 describe("web_search", () => {

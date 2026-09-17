@@ -22,6 +22,7 @@ export class AgentHost {
   readonly tools: ToolRegistry;
   askUser?: AskUserFn;
   clientFs: ClientFsCaps = { readTextFile: false, writeTextFile: false };
+  clientTerminal = false;
   private readonly artifacts: ArtifactStore;
   private readonly runtimes = new Map<string, SessionRuntime>();
 

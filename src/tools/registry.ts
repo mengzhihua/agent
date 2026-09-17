@@ -69,6 +69,13 @@ export function createBuiltinTools(config: AgentConfig, options: RegistryOptions
           typeof args.cwd === "string" ? args.cwd : undefined,
           asOptionalNumber(args, "timeout_ms"),
           ctx.signal,
+          {
+            terminal: ctx.runtime?.terminal,
+            onTerminal:
+              ctx.runtime?.onTerminal && ctx.callId
+                ? (terminalId) => ctx.runtime!.onTerminal!(ctx.callId!, terminalId)
+                : undefined,
+          },
         ),
     },
     {

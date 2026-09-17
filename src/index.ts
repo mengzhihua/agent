@@ -16,4 +16,5 @@ export { detectSandboxBackend, planShell } from "./sandbox/index.js";
 export { runEvalFile, runEvalTarget } from "./eval/run.js";
 export { dispatch, bindAcpApprover, parsePermissionOutcome } from "./protocol/acp.js";
 export { parseClientCapabilities, createAcpFileIo, hasClientFs } from "./protocol/fs.js";
+export { createAcpTerminal, clientTerminalEnabled } from "./protocol/terminal.js";
 export { diskFileIo } from "./files/io.js";

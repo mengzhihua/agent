@@ -2,6 +2,7 @@ import { ArtifactStore } from "./artifacts/store.js";
 import { createBrowserDriver } from "./browser/chrome.js";
 import { BrowserSession } from "./browser/session.js";
 import { diskFileIo, type FileIo } from "./files/io.js";
+import type { AcpTerminal } from "./protocol/terminal.js";
 import type { AgentConfig } from "./types.js";
 
 export interface AskUserRequest {
@@ -18,6 +19,8 @@ export interface SessionRuntime {
   browser: BrowserSession;
   files: FileIo;
   askUser?: AskUserFn;
+  terminal?: AcpTerminal;
+  onTerminal?: (callId: string, terminalId: string) => void;
 }
 
 export function createSessionRuntime(
