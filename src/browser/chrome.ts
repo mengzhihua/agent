@@ -68,16 +68,15 @@ export class ChromeDriver implements BrowserDriver {
 
   async open(url: string, signal: AbortSignal): Promise<PageView> {
     await this.ensure(signal);
-    const loaded = this.cdp!.waitOnce("Page.loadEventFired", 20_000).catch(() => undefined);
     await this.cdp!.send("Page.navigate", { url }, this.sessionId);
-    await loaded;
+    await this.waitReady();
     return this.refresh();
   }
 
   async click(ref: string, _signal: AbortSignal): Promise<PageView> {
     const node = this.require(ref);
     await this.callOnNode(node, "function() { this.click(); }");
-    await Promise.race([this.cdp!.waitOnce("Page.loadEventFired", 8_000).catch(() => undefined), delay(400)]);
+    await this.waitReady(800);
     return this.refresh();
   }
 
@@ -117,17 +116,20 @@ export class ChromeDriver implements BrowserDriver {
     }
     this.cdp = undefined;
     this.sessionId = undefined;
-    if (this.proc?.pid) {
+    const pid = this.proc?.pid;
+    this.proc = undefined;
+    if (pid) {
       try {
-        this.proc.kill("SIGTERM");
+        process.kill(pid, "SIGKILL");
       } catch {
-        // ignore
+        // already gone
       }
     }
-    this.proc = undefined;
-    if (this.profileDir) {
-      fs.rmSync(this.profileDir, { recursive: true, force: true });
-      this.profileDir = undefined;
+    const profile = this.profileDir;
+    this.profileDir = undefined;
+    if (profile) {
+      await delay(50);
+      fs.rmSync(profile, { recursive: true, force: true, maxRetries: 8, retryDelay: 50 });
     }
     this.current = { url: "about:blank", title: "", nodes: [] };
     this.currentHtml = "";
@@ -188,6 +190,19 @@ export class ChromeDriver implements BrowserDriver {
     return this.current;
   }
 
+  private async waitReady(minMs = 0): Promise<void> {
+    const start = Date.now();
+    for (let i = 0; i < 50; i++) {
+      try {
+        const state = await this.evaluate<string>("document.readyState");
+        if (state === "complete" && Date.now() - start >= minMs) return;
+      } catch {
+        // page may be navigating
+      }
+      await delay(100);
+    }
+  }
+
   private async evaluate<T>(expression: string): Promise<T> {
     const result = await this.cdp!.send<{ result: { value?: T } }>(
       "Runtime.evaluate",
@@ -237,6 +252,7 @@ function launchChrome(
       "--no-sandbox",
       "--disable-dev-shm-usage",
       "--remote-debugging-port=0",
+      "--remote-allow-origins=*",
       `--user-data-dir=${profileDir}`,
       "--no-first-run",
       "--no-default-browser-check",
