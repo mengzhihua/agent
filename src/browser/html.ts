@@ -109,6 +109,12 @@ export class HtmlDriver implements BrowserDriver {
     return this.snapshot();
   }
 
+  private require(ref: string): BrowserNode {
+    const node = this.nodes.find((item) => item.ref === ref);
+    if (!node) throw new Error(`unknown browser ref: ${ref}`);
+    return node;
+  }
+
   snapshot(): PageView {
     const nodes = this.nodes.map((node) => ({
       ...node,
