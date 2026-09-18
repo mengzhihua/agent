@@ -12,6 +12,7 @@ import { autoApprover, denyApprover } from "./permissions/policy.js";
 import { createProvider } from "./provider/factory.js";
 import { runAcpStdio } from "./protocol/acp.js";
 import type { AskUserFn } from "./runtime.js";
+import { applyLogin, applyLogout, parseLoginProvider, redactSecrets } from "./credentials.js";
 import { formatInitResult, initWorkspace } from "./init.js";
 import { runSelfUpdate, runUninstall } from "./self_update.js";
 import { SessionStore } from "./session/store.js";
@@ -25,6 +26,8 @@ function usage(): string {
        agent doctor
        agent config
        agent init [dir]
+       agent login [--provider openai|anthropic|xai] [--key KEY]
+       agent logout [--provider openai|anthropic|xai]
        agent update
        agent uninstall
        agent completion bash|zsh|powershell
@@ -48,6 +51,7 @@ Environment: OPENAI_API_KEY, OPENAI_BASE_URL, XAI_API_KEY, ANTHROPIC_API_KEY,
 AGENT_MODEL, AGENT_HOME, AGENT_APPROVAL=ask|auto, AGENT_MODE=default|plan,
 AGENT_ARTIFACTS, AGENT_SANDBOX=auto|none, AGENT_BROWSER=auto|chrome|html, AGENT_CHROME
 User file: ~/.agent/config.json (CLI and env override the file)
+Keys: env vars override ~/.agent/credentials.json (agent login)
 
 Install (macOS/Linux): curl -fsSL https://raw.githubusercontent.com/mengzhihua/agent/main/scripts/install.sh | bash
 Install (Windows):     irm https://raw.githubusercontent.com/mengzhihua/agent/main/scripts/install.ps1 | iex
@@ -87,6 +91,22 @@ async function main(): Promise<void> {
   if (process.argv[2] === "init") {
     const dir = path.resolve(process.argv[3] || process.cwd());
     output.write(`${formatInitResult(initWorkspace(dir))}\n`);
+    return;
+  }
+
+  if (process.argv[2] === "login") {
+    await runLoginCommand(process.argv.slice(3));
+    return;
+  }
+
+  if (process.argv[2] === "logout") {
+    const { values } = parseArgs({
+      args: process.argv.slice(3),
+      options: { provider: { type: "string", short: "p" } },
+    });
+    const provider = values.provider ? parseLoginProvider(values.provider) : undefined;
+    const file = applyLogout(provider);
+    output.write(provider ? `Removed ${provider} credentials (${file})\n` : `Cleared credentials (${file})\n`);
     return;
   }
 
@@ -201,6 +221,32 @@ async function main(): Promise<void> {
   } finally {
     await host.close();
   }
+}
+
+async function runLoginCommand(argv: string[]): Promise<void> {
+  const { values } = parseArgs({
+    args: argv,
+    options: {
+      provider: { type: "string", short: "p" },
+      key: { type: "string" },
+      "base-url": { type: "string" },
+    },
+  });
+  const provider = parseLoginProvider(values.provider);
+  let key = values.key?.trim() ?? "";
+  if (!key) {
+    if (!input.isTTY) {
+      throw new Error("usage: agent login --provider openai|anthropic|xai --key KEY");
+    }
+    const rl = createInterface({ input, output, terminal: true });
+    try {
+      key = (await rl.question(`API key for ${provider}: `)).trim();
+    } finally {
+      rl.close();
+    }
+  }
+  const file = applyLogin({ provider, apiKey: key, baseUrl: values["base-url"] });
+  output.write(`Saved ${provider} credentials to ${file}\n`);
 }
 
 async function interactive(host: AgentHost, sessionId: string): Promise<void> {
@@ -353,7 +399,7 @@ function printEvent(event: LoopEvent, markText: () => void): void {
       stderr.write("\naborted\n");
       break;
     case "error":
-      stderr.write(`\nerror: ${event.message}\n`);
+      stderr.write(`\nerror: ${redactSecrets(event.message)}\n`);
       break;
     default:
       break;
@@ -361,6 +407,6 @@ function printEvent(event: LoopEvent, markText: () => void): void {
 }
 
 main().catch((err) => {
-  stderr.write(`${err instanceof Error ? err.message : err}\n`);
+  stderr.write(`${redactSecrets(err instanceof Error ? err.message : String(err))}\n`);
   process.exitCode = 1;
 });

@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import { redactSecrets } from "../credentials.js";
 import type { SessionEvent } from "../types.js";
 import { ensureDir } from "../workspace.js";
 
@@ -25,7 +26,7 @@ export class SessionStore {
 
   append(sessionId: string, event: SessionEvent): void {
     ensureDir(this.dir);
-    fs.appendFileSync(this.pathFor(sessionId), `${JSON.stringify(event)}\n`, "utf8");
+    fs.appendFileSync(this.pathFor(sessionId), `${redactSecrets(JSON.stringify(event))}\n`, "utf8");
   }
 
   read(sessionId: string): SessionEvent[] {

@@ -5,6 +5,7 @@ import { findChrome } from "./browser/chrome.js";
 import { agentHome, loadConfig } from "./config.js";
 import { defaultInstallPrefix, defaultShell, userBinDir, whichProgram } from "./platform.js";
 import { pathEntryPresent } from "./path_setup.js";
+import { authReport } from "./credentials.js";
 import { inspectGit } from "./git-context.js";
 import { detectSandboxBackend } from "./sandbox/plan.js";
 import { userConfigPath } from "./user-config.js";
@@ -30,6 +31,7 @@ export function doctorReport(): string {
     `browser ${config.browserBackend}${chrome ? ` (${chrome})` : " (no Chrome/Edge found)"}`,
     `ripgrep ${whichProgram("rg") ?? "fallback walker"}`,
     `provider ${config.provider} / ${config.model}`,
+    `auth ${authReport()}`,
     `approval ${config.approvalMode}  mode ${config.runMode}`,
   ];
   return lines.join("\n");

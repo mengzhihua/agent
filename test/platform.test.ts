@@ -54,5 +54,6 @@ describe("doctor", () => {
     expect(out).toMatch(/^path /m);
     expect(out).toMatch(/^config /m);
     expect(out).toMatch(/^git /m);
+    expect(out).toMatch(/^auth /m);
   });
 });

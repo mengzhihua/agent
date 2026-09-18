@@ -1,6 +1,7 @@
 import { detectBrowserBackend } from "./browser/chrome.js";
 import os from "node:os";
 import path from "node:path";
+import { resolveSecret } from "./credentials.js";
 import { detectSandboxBackend } from "./sandbox/plan.js";
 import type { AgentConfig, ApprovalMode, BrowserMode, ProviderName, RunMode, SandboxMode } from "./types.js";
 import { readUserConfig } from "./user-config.js";
@@ -19,7 +20,7 @@ function detectProvider(fileProvider?: ProviderName): ProviderName {
     return explicit;
   }
   if (fileProvider) return fileProvider;
-  if (process.env.ANTHROPIC_API_KEY && !process.env.OPENAI_API_KEY && !process.env.XAI_API_KEY) {
+  if (resolveSecret("ANTHROPIC_API_KEY") && !resolveSecret("OPENAI_API_KEY") && !resolveSecret("XAI_API_KEY")) {
     return "anthropic";
   }
   return "openai";
@@ -29,7 +30,7 @@ function defaultModel(provider: ProviderName, fileModel?: string): string {
   if (process.env.AGENT_MODEL) return process.env.AGENT_MODEL;
   if (fileModel) return fileModel;
   if (provider === "anthropic") return "claude-sonnet-4-5";
-  if (process.env.XAI_API_KEY && !process.env.OPENAI_API_KEY) return "grok-4";
+  if (resolveSecret("XAI_API_KEY") && !resolveSecret("OPENAI_API_KEY")) return "grok-4";
   return "gpt-4.1";
 }
 

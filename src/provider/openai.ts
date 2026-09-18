@@ -1,3 +1,5 @@
+import { redactSecrets, resolveSecret } from "../credentials.js";
+import { fetchWithRetry } from "../http.js";
 import type { CompletionEvent, CompletionRequest, ModelMessage, Provider, ToolDefinition } from "../types.js";
 
 function openaiTools(tools: ToolDefinition[]) {
@@ -55,7 +57,7 @@ export class OpenAIProvider implements Provider {
 
   async *complete(request: CompletionRequest, signal: AbortSignal): AsyncIterable<CompletionEvent> {
     const url = `${this.baseUrl.replace(/\/$/, "")}/chat/completions`;
-    const res = await fetch(url, {
+    const res = await fetchWithRetry(url, {
       method: "POST",
       signal,
       headers: {
@@ -71,7 +73,10 @@ export class OpenAIProvider implements Provider {
       }),
     });
     if (!res.ok || !res.body) {
-      const body = await res.text().catch(() => "");
+      const body = redactSecrets(await res.text().catch(() => ""));
+      if (res.status === 401 || res.status === 403) {
+        throw new Error(`OpenAI HTTP ${res.status}: missing or invalid API key. Run: agent login --provider openai`);
+      }
       throw new Error(`OpenAI HTTP ${res.status}: ${body.slice(0, 500)}`);
     }
 
@@ -126,13 +131,15 @@ export class OpenAIProvider implements Provider {
 }
 
 export function createOpenAIProvider(): OpenAIProvider {
-  const apiKey = process.env.OPENAI_API_KEY ?? process.env.XAI_API_KEY;
+  const openaiKey = resolveSecret("OPENAI_API_KEY");
+  const xaiKey = resolveSecret("XAI_API_KEY");
+  const apiKey = openaiKey ?? xaiKey;
   if (!apiKey) {
-    throw new Error("OPENAI_API_KEY or XAI_API_KEY is required for the openai provider");
+    throw new Error("missing API key. Run: agent login --provider openai");
   }
   const baseUrl =
-    process.env.OPENAI_BASE_URL ??
-    (process.env.XAI_API_KEY && !process.env.OPENAI_API_KEY ? "https://api.x.ai/v1" : "https://api.openai.com/v1");
+    resolveSecret("OPENAI_BASE_URL") ??
+    (xaiKey && !openaiKey ? "https://api.x.ai/v1" : "https://api.openai.com/v1");
   return new OpenAIProvider(apiKey, baseUrl);
 }
 
