@@ -143,7 +143,13 @@ export async function* runTurn(options: RunTurnOptions): AsyncGenerator<LoopEven
             const handler = tools.get(call.name);
             return handler
               ? runTool(handler, call.arguments, { config, signal, runtime, callId: call.id })
-              : Promise.resolve({ name: call.name, content: `unknown tool: ${call.name}`, isError: true });
+              : Promise.resolve({
+                  name: call.name,
+                  content: `unknown tool: ${call.name}`,
+                  isError: true,
+                  locations: undefined,
+                  diff: undefined,
+                });
           }),
         );
 
