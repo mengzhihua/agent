@@ -2,7 +2,7 @@
 
 通用 agent 软件：一个极简的模型–工具循环，外面套 harness。
 
-当前进度：**期 20 — 登录凭据、密钥脱敏与请求重试**。
+当前进度：**期 21 — CLI JSON / stream-json 输出**。
 
 - [行业研究](docs/industry-agent-research.md) — Codex、Claude Code、Grok Build、Devin、Cursor、Gemini CLI、Manus、OpenHands 等怎么做，以及通用 harness 的收敛形态
 - [期 0](docs/phase-0.md)
@@ -26,6 +26,7 @@
 - [期 18](docs/phase-18.md)
 - [期 19](docs/phase-19.md)
 - [期 20](docs/phase-20.md)
+- [期 21](docs/phase-21.md)
 
 ## 研究结论（极简）
 
@@ -76,6 +77,8 @@ npm run setup
 
 ```text
 agent -p "prompt"     # 单次
+agent -p --output-format json "prompt"
+agent -q -p --output-format stream-json "prompt"
 agent -y -p "prompt"  # 写/shell/联网自动放行
 agent --plan          # 只读研究 + update_plan
 agent eval test/evals # 确定性回归（不调模型）
