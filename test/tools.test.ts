@@ -3,6 +3,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { loadConfig } from "../src/config.js";
+import { defaultShell } from "../src/platform.js";
 import { grepTool } from "../src/tools/grep.js";
 import { globTool } from "../src/tools/glob.js";
 import { readFileTool } from "../src/tools/read.js";
@@ -50,7 +51,7 @@ describe("read/grep/glob/shell", () => {
       terminal: {
         create: async (input) => {
           methods.push("create");
-          expect(input.args).toEqual(["-c", "echo hi"]);
+          expect(input.args).toEqual([...defaultShell().argsPrefix, "echo hi"]);
           expect(input.cwd).toBe(fixture);
           return "term_1";
         },

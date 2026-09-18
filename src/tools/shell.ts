@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { defaultShell } from "../platform.js";
 import type { AcpTerminal } from "../protocol/terminal.js";
 import { planShell } from "../sandbox/plan.js";
 import type { AgentConfig } from "../types.js";
@@ -75,10 +76,10 @@ async function runViaClientTerminal(
   terminal: AcpTerminal,
   onTerminal?: (terminalId: string) => void,
 ): Promise<string> {
-  const shell = process.env.SHELL && process.env.SHELL.startsWith("/") ? process.env.SHELL : "/bin/sh";
+  const shell = defaultShell();
   const terminalId = await terminal.create({
-    command: shell,
-    args: ["-c", command],
+    command: shell.command,
+    args: [...shell.argsPrefix, command],
     cwd,
     outputByteLimit: config.shellOutputLimit,
   });

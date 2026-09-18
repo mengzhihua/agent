@@ -2,7 +2,7 @@
 
 通用 agent 软件：一个极简的模型–工具循环，外面套 harness。
 
-当前进度：**期 16 — ACP elicitation**。
+当前进度：**期 17 — 跨平台一键安装**。
 
 - [行业研究](docs/industry-agent-research.md) — Codex、Claude Code、Grok Build、Devin、Cursor、Gemini CLI、Manus、OpenHands 等怎么做，以及通用 harness 的收敛形态
 - [期 0](docs/phase-0.md)
@@ -22,6 +22,7 @@
 - [期 14](docs/phase-14.md)
 - [期 15](docs/phase-15.md)
 - [期 16](docs/phase-16.md)
+- [期 17](docs/phase-17.md)
 
 ## 研究结论（极简）
 
@@ -33,30 +34,52 @@
 
 落地顺序：先做出可取消、可 resume 的 tool loop，再加 Skills/MCP/权限，再考虑浏览器与云端 VM。不要从多角色 agent 框架或自研工作流图起步。
 
-## 运行
+## 安装（macOS / Linux / Windows）
+
+需要本机 [Node.js 22+](https://nodejs.org/)（不需要 Docker）。
+
+macOS / Linux：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/mengzhihua/agent/main/scripts/install.sh | bash
+```
+
+Windows PowerShell：
+
+```powershell
+irm https://raw.githubusercontent.com/mengzhihua/agent/main/scripts/install.ps1 | iex
+```
+
+装好后执行 `agent doctor` 查看 sandbox、Chrome/Edge 和安装路径。卸载时给安装脚本加 `--uninstall`。
+
+开发者从仓库安装：
 
 ```bash
 npm install
 npm test
-npm run agent -- -y -p "What files are in this workspace?"
-npm run agent -- --plan -p "先给出实现计划"
+npm run setup
 ```
 
 密钥（任选）：`OPENAI_API_KEY`、`OPENAI_BASE_URL`、`XAI_API_KEY`、`ANTHROPIC_API_KEY`。
 
+## 运行
+
 ```text
-npm run agent -- -p "prompt"     # 单次
-npm run agent -- -y -p "prompt"  # 写/shell/联网自动放行
-npm run agent -- --plan          # 只读研究 + update_plan
-npm run agent -- eval test/evals # 确定性回归（不调模型）
-npm run agent -- --browser chrome -y -p "Open a page and screenshot"
-npm run agent -- --list
-npm run agent -- --resume <id> -p "continue"
-npm run agent -- acp             # JSON-RPC（NDJSON 或 Content-Length；ask 时向客户端要权限；fs/terminal/MCP 走编辑器）
-npm run agent                    # 交互（/plan /execute /skills；ask_user 走终端，ACP 走 elicitation）
+agent -p "prompt"     # 单次
+agent -y -p "prompt"  # 写/shell/联网自动放行
+agent --plan          # 只读研究 + update_plan
+agent eval test/evals # 确定性回归（不调模型）
+agent --browser chrome -y -p "Open a page and screenshot"
+agent --list
+agent --resume <id> -p "continue"
+agent acp             # JSON-RPC（NDJSON 或 Content-Length；ask 时向客户端要权限；fs/terminal/MCP 走编辑器）
+agent doctor          # 检查 node / sandbox / 浏览器 / 安装路径
+agent                 # 交互（/plan /execute /skills；ask_user 走终端，ACP 走 elicitation）
 ```
 
-无 TTY 且未加 `-y` 时，写操作和 shell 会被拒绝。工作区不必是 git 仓库；交付物默认写到 `artifacts/`。Linux 上安装 `bubblewrap` 后，shell 默认无网络、只能写 workspace（`AGENT_SANDBOX=none` 可关）。找到本机 Chrome 时，`browser` 走 CDP（`AGENT_BROWSER=html` 可退回静态 fetch）。
+仓库内开发也可以：`npm run agent -- -y -p "..."`（走编译后的 `dist/cli.js`）。
+
+无 TTY 且未加 `-y` 时，写操作和 shell 会被拒绝。工作区不必是 git 仓库；交付物默认写到 `artifacts/`。Linux 上安装 `bubblewrap` 后，shell 默认无网络、只能写 workspace（`AGENT_SANDBOX=none` 可关）；macOS / Windows 默认不套 bwrap。找到本机 Chrome 或 Edge 时，`browser` 走 CDP（`AGENT_BROWSER=html` 可退回静态 fetch）。
 
 ## 工具
 

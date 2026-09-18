@@ -1,15 +1,22 @@
 {
   "name": "agent",
   "private": true,
-  "version": "0.17.0",
+  "version": "0.18.0",
   "type": "module",
   "description": "General-purpose agent harness: one tool loop, local workspace, Chrome, sandbox, eval, ACP.",
   "bin": {
     "agent": "./dist/cli.js"
   },
+  "files": [
+    "dist",
+    "scripts",
+    "README.md"
+  ],
   "scripts": {
-    "agent": "tsx src/cli.ts",
+    "agent": "node dist/cli.js",
     "build": "tsc",
+    "prepare": "tsc",
+    "setup": "node scripts/setup.mjs --from .",
     "test": "vitest run",
     "test:watch": "vitest"
   },

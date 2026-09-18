@@ -2,39 +2,20 @@ import { spawn, type ChildProcess } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { chromeCandidates, killProcessTree, whichProgram } from "../platform.js";
 import { axToNodes, type MappedNode } from "./ax.js";
 import { openCdp, type CdpClient } from "./cdp.js";
 import { HtmlDriver } from "./html.js";
 import { sensitiveWarning, type BrowserDriver, type PageView, type Screenshot } from "./types.js";
 
-const CHROME_NAMES = ["google-chrome", "google-chrome-stable", "chromium-browser", "chromium", "chrome"];
-
 export function findChrome(explicit?: string): string | undefined {
-  const candidates = [explicit, process.env.AGENT_CHROME, process.env.CHROME_PATH, ...CHROME_NAMES].filter(
-    (item): item is string => Boolean(item),
-  );
-  for (const candidate of candidates) {
+  for (const candidate of chromeCandidates(explicit)) {
     if (candidate.includes("/") || candidate.includes("\\")) {
       if (fs.existsSync(candidate)) return candidate;
       continue;
     }
-    const found = lookupPath(candidate);
+    const found = whichProgram(candidate);
     if (found) return found;
-  }
-  return undefined;
-}
-
-function lookupPath(name: string): string | undefined {
-  const pathEnv = process.env.PATH ?? "";
-  for (const dir of pathEnv.split(path.delimiter)) {
-    if (!dir) continue;
-    const full = path.join(dir, name);
-    try {
-      fs.accessSync(full, fs.constants.X_OK);
-      return full;
-    } catch {
-      // keep looking
-    }
   }
   return undefined;
 }
@@ -49,7 +30,7 @@ export function detectBrowserBackend(mode: "auto" | "html" | "chrome", chromePat
 export function createBrowserDriver(backend: "html" | "chrome", chromePath?: string): BrowserDriver {
   if (backend === "chrome") {
     const bin = findChrome(chromePath);
-    if (!bin) throw new Error("Chrome/Chromium not found. Set AGENT_CHROME or install google-chrome.");
+    if (!bin) throw new Error("Chrome/Edge not found. Set AGENT_CHROME or install Google Chrome.");
     return new ChromeDriver(bin);
   }
   return new HtmlDriver();
@@ -118,13 +99,7 @@ export class ChromeDriver implements BrowserDriver {
     this.sessionId = undefined;
     const pid = this.proc?.pid;
     this.proc = undefined;
-    if (pid) {
-      try {
-        process.kill(pid, "SIGKILL");
-      } catch {
-        // already gone
-      }
-    }
+    if (pid) killProcessTree(pid);
     const profile = this.profileDir;
     this.profileDir = undefined;
     if (profile) {
