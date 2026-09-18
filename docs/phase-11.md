@@ -13,7 +13,7 @@
 5. prompt 结束后 `session/update` 带 `session_info_update`（title、updatedAt）
 6. CLI `--list` 同样显示 title
 
-不做（以后）：SSE 传输、Docker workspace、云端 VM、Playwright 包。
+不做（以后）：SSE 传输、Docker workspace、云端 VM、Playwright 包。Slash commands 见 [期 12](phase-12.md)。
 
 ## 怎么跑
 

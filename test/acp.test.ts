@@ -14,6 +14,7 @@ import {
   parsePermissionOutcome,
   listAcpSessions,
   parseListCursor,
+  parseSlashCommand,
   toAcpReplayUpdate,
 } from "../src/protocol/acp.js";
 import { parseAcpMcpServers } from "../src/protocol/mcp.js";
@@ -71,7 +72,7 @@ describe("ACP-shaped protocol", () => {
         loadSession: true,
         sessionCapabilities: { additionalDirectories: {}, resume: {}, close: {}, list: {}, delete: {} },
       },
-      agentInfo: { name: "agent", version: "0.12.0" },
+      agentInfo: { name: "agent", version: "0.13.0" },
     });
 
     const created = (await dispatch(
@@ -778,7 +779,9 @@ describe("ACP session load / resume / close", () => {
     )) as { sessionId: string; modes: { currentModeId: string } };
     expect(resumed.sessionId).toBe(created.sessionId);
     expect(resumed.modes.currentModeId).toBe("execute");
-    expect(notes).toEqual([]);
+    expect(JSON.stringify(notes)).toContain("available_commands_update");
+    expect(JSON.stringify(notes)).not.toContain("user_message_chunk");
+    expect(JSON.stringify(notes)).not.toContain("first");
 
     const after: unknown[] = [];
     await dispatch(
@@ -998,6 +1001,135 @@ describe("ACP session list / delete", () => {
         () => undefined,
       ),
     ).rejects.toThrow("unknown session");
+    await host.close();
+  });
+});
+
+describe("ACP slash commands", () => {
+  it("parses known commands and leaves unknown text alone", () => {
+    expect(parseSlashCommand("/plan inspect auth")).toEqual({ name: "plan", rest: "inspect auth" });
+    expect(parseSlashCommand("/skills")).toEqual({ name: "skills", rest: "" });
+    expect(parseSlashCommand("/unknown foo")).toEqual({ rest: "/unknown foo" });
+    expect(parseSlashCommand("not a command")).toEqual({ rest: "not a command" });
+  });
+
+  it("advertises commands on session/new and handles /plan /skills", async () => {
+    const provider = new ScriptedProvider([{ text: "from model" }]);
+    const host = await hostWith(provider);
+    const sessions = new Set<string>();
+    const controllers = new Map<string, AbortController>();
+    const createdNotes: unknown[] = [];
+    const created = (await dispatch(
+      host,
+      sessions,
+      controllers,
+      { jsonrpc: "2.0", id: 1, method: "session/new" },
+      (note) => createdNotes.push(note),
+    )) as { sessionId: string };
+    expect(JSON.stringify(createdNotes)).toContain("available_commands_update");
+    expect(JSON.stringify(createdNotes)).toContain('"name":"plan"');
+
+    const planNotes: unknown[] = [];
+    const planned = await dispatch(
+      host,
+      sessions,
+      controllers,
+      {
+        jsonrpc: "2.0",
+        id: 2,
+        method: "session/prompt",
+        params: { sessionId: created.sessionId, prompt: "/plan" },
+      },
+      (note) => planNotes.push(note),
+    );
+    expect(planned).toEqual({ stopReason: "end_turn" });
+    expect(host.config.runMode).toBe("plan");
+    expect(JSON.stringify(planNotes)).toContain("current_mode_update");
+    expect(JSON.stringify(planNotes)).not.toContain("from model");
+
+    const skillNotes: unknown[] = [];
+    await dispatch(
+      host,
+      sessions,
+      controllers,
+      {
+        jsonrpc: "2.0",
+        id: 3,
+        method: "session/prompt",
+        params: { sessionId: created.sessionId, prompt: "/skills" },
+      },
+      (note) => skillNotes.push(note),
+    );
+    expect(JSON.stringify(skillNotes)).toContain("(no skills)");
+    expect(JSON.stringify(skillNotes)).not.toContain("from model");
+
+    const restNotes: unknown[] = [];
+    await dispatch(
+      host,
+      sessions,
+      controllers,
+      {
+        jsonrpc: "2.0",
+        id: 4,
+        method: "session/prompt",
+        params: { sessionId: created.sessionId, prompt: "/execute say hi" },
+      },
+      (note) => restNotes.push(note),
+    );
+    expect(host.config.runMode).toBe("default");
+    expect(JSON.stringify(restNotes)).toContain("from model");
+    await host.close();
+  });
+
+  it("lets /yes skip client permission prompts", async () => {
+    const provider = new ScriptedProvider([
+      { toolCalls: [{ id: "c1", name: "shell", arguments: { command: "echo hi" } }] },
+      { text: "done" },
+    ]);
+    const host = await hostWith(provider, { approvalMode: "ask", sandbox: "none" });
+    const sessions = new Set<string>();
+    const controllers = new Map<string, AbortController>();
+    const created = (await dispatch(
+      host,
+      sessions,
+      controllers,
+      { jsonrpc: "2.0", id: 1, method: "session/new" },
+      () => undefined,
+    )) as { sessionId: string };
+
+    await dispatch(
+      host,
+      sessions,
+      controllers,
+      {
+        jsonrpc: "2.0",
+        id: 2,
+        method: "session/prompt",
+        params: { sessionId: created.sessionId, prompt: "/yes" },
+      },
+      () => undefined,
+    );
+    expect(host.config.approvalMode).toBe("auto");
+
+    const methods: string[] = [];
+    const result = await dispatch(
+      host,
+      sessions,
+      controllers,
+      {
+        jsonrpc: "2.0",
+        id: 3,
+        method: "session/prompt",
+        params: { sessionId: created.sessionId, prompt: "run it" },
+      },
+      () => undefined,
+      async (method) => {
+        methods.push(method);
+        return { outcome: { outcome: "selected", optionId: "allow-once" } };
+      },
+    );
+    expect(result).toEqual({ stopReason: "end_turn" });
+    expect(methods).toEqual([]);
     await host.close();
   });
 });

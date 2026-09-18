@@ -1,6 +1,7 @@
 import path from "node:path";
 import { stdin, stdout, stderr } from "node:process";
 import type { AgentHost } from "../host.js";
+import { autoApprover } from "../permissions/policy.js";
 import { sessionTitle, type SessionListRow } from "../session/store.js";
 import type { ApprovalRequest, LoopEvent, Risk, RunMode, SessionEvent } from "../types.js";
 import { encodeMessage, extractMessages, type Framing } from "./framing.js";
@@ -24,6 +25,14 @@ interface RpcResponse {
 
 export const ACP_PROTOCOL_VERSION = 1;
 export const SESSION_LIST_PAGE_SIZE = 50;
+
+export const AVAILABLE_COMMANDS = [
+  { name: "plan", description: "Switch to plan mode: read-only research, then update_plan.", input: { hint: "what to plan" } },
+  { name: "execute", description: "Switch to execute mode: edit files and run tools.", input: { hint: "task" } },
+  { name: "skills", description: "List available skills for this workspace." },
+  { name: "yes", description: "Auto-approve write, shell, and network tools." },
+  { name: "ask", description: "Ask before write, shell, or network tools." },
+] as const;
 
 export const SESSION_MODES = [
   { id: "execute", name: "Execute", description: "Edit files and run tools in the workspace." },
@@ -225,7 +234,7 @@ export async function dispatch(
           mcpCapabilities: { http: true, sse: false },
           sessionCapabilities: { additionalDirectories: {}, resume: {}, close: {}, list: {}, delete: {} },
         },
-        agentInfo: { name: "agent", version: "0.12.0" },
+        agentInfo: { name: "agent", version: "0.13.0" },
         authMethods: [],
       };
     case "authenticate":
@@ -235,6 +244,7 @@ export async function dispatch(
       sessions.add(sessionId);
       host.setSessionRoots(sessionId, parseAdditionalDirectories(req.params?.additionalDirectories));
       await host.attachSessionMcp(sessionId, req.params?.mcpServers);
+      notifyAvailableCommands(sessionId, notify);
       return { sessionId, modes: modeState(host.config.runMode) };
     }
     case "session/load": {
@@ -243,10 +253,12 @@ export async function dispatch(
         const update = toAcpReplayUpdate(event);
         if (update) notify({ sessionId, update });
       }
+      notifyAvailableCommands(sessionId, notify);
       return null;
     }
     case "session/resume": {
       const sessionId = await restoreSession(host, sessions, req.params);
+      notifyAvailableCommands(sessionId, notify);
       return { sessionId, modes: modeState(host.config.runMode) };
     }
     case "session/close": {
@@ -286,7 +298,13 @@ export async function dispatch(
     case "session/prompt": {
       const sessionId = String(req.params?.sessionId ?? "");
       if (!sessions.has(sessionId)) throw new Error("unknown session");
-      const prompt = promptText(req.params?.prompt);
+      const rawPrompt = promptText(req.params?.prompt);
+      const slash = parseSlashCommand(rawPrompt);
+      if (slash.name && applySlashCommand(host, sessionId, slash, notify) === "done") {
+        return { stopReason: "end_turn" };
+      }
+      const prompt = slash.name ? slash.rest : rawPrompt;
+      if (!prompt) return { stopReason: "end_turn" };
       const controller = new AbortController();
       controllers.set(sessionId, controller);
       const previousApprover = host.approver;
@@ -297,7 +315,7 @@ export async function dispatch(
       const previousOnTerminal = runtime.onTerminal;
       if (request) {
         bindAcpApprover(host, sessionId, request);
-        if (host.config.approvalMode === "auto") host.approver = previousApprover;
+        if (host.config.approvalMode === "auto") host.approver = autoApprover();
         if (hasClientFs(host.clientFs)) {
           runtime.files = createAcpFileIo({
             workspace: runtime.workspace,
@@ -340,6 +358,67 @@ export async function dispatch(
     }
     default:
       throw new Error(`unknown method: ${req.method ?? "?"}`);
+  }
+}
+
+function notifyAvailableCommands(sessionId: string, notify: NotifyFn): void {
+  notify({
+    sessionId,
+    update: {
+      sessionUpdate: "available_commands_update",
+      availableCommands: AVAILABLE_COMMANDS,
+    },
+  });
+}
+
+export function parseSlashCommand(text: string): { name?: string; rest: string } {
+  const match = /^\/([a-zA-Z][\w-]*)(?:\s+([\s\S]*))?$/.exec(text.trim());
+  if (!match) return { rest: text };
+  const name = match[1];
+  if (!AVAILABLE_COMMANDS.some((command) => command.name === name)) return { rest: text };
+  return { name, rest: (match[2] ?? "").trim() };
+}
+
+export function applySlashCommand(
+  host: AgentHost,
+  sessionId: string,
+  slash: { name?: string; rest: string },
+  notify: NotifyFn,
+): "continue" | "done" {
+  switch (slash.name) {
+    case "plan":
+      host.setRunMode("plan");
+      notify({
+        sessionId,
+        update: { sessionUpdate: "current_mode_update", currentModeId: modeState(host.config.runMode).currentModeId },
+      });
+      return slash.rest ? "continue" : "done";
+    case "execute":
+      host.setRunMode("default");
+      notify({
+        sessionId,
+        update: { sessionUpdate: "current_mode_update", currentModeId: modeState(host.config.runMode).currentModeId },
+      });
+      return slash.rest ? "continue" : "done";
+    case "yes":
+      host.config = { ...host.config, approvalMode: "auto" };
+      return slash.rest ? "continue" : "done";
+    case "ask":
+      host.config = { ...host.config, approvalMode: "ask" };
+      return slash.rest ? "continue" : "done";
+    case "skills": {
+      const names = host.skills.all().map((skill) => `${skill.name}: ${skill.description}`);
+      notify({
+        sessionId,
+        update: {
+          sessionUpdate: "agent_message_chunk",
+          content: { type: "text", text: names.join("\n") || "(no skills)" },
+        },
+      });
+      return "done";
+    }
+    default:
+      return "continue";
   }
 }
 

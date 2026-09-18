@@ -22,6 +22,8 @@ export {
   toAcpReplayUpdate,
   listAcpSessions,
   parseListCursor,
+  parseSlashCommand,
+  AVAILABLE_COMMANDS,
 } from "./protocol/acp.js";
 export { parseClientCapabilities, createAcpFileIo, hasClientFs } from "./protocol/fs.js";
 export { createAcpTerminal, clientTerminalEnabled } from "./protocol/terminal.js";
