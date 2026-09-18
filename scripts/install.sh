@@ -28,9 +28,9 @@ fi
 
 if [ "${1:-}" = "--uninstall" ]; then
   if [ -f "$SRC/scripts/setup.mjs" ]; then
-    node "$SRC/scripts/setup.mjs" --prefix "$PREFIX" --uninstall
+    node "$SRC/scripts/setup.mjs" --prefix "$PREFIX" --from "$SRC" --uninstall
   else
-    rm -rf "$PREFIX/src" "$PREFIX/bin/agent" "$HOME/.local/bin/agent"
+    rm -rf "$PREFIX/src" "$PREFIX/bin/agent" "$HOME/.local/bin/agent" "$HOME/.agent/env.sh"
     echo "Removed $PREFIX shims."
   fi
   exit 0
@@ -51,4 +51,4 @@ mv "$EXTRACT" "$SRC"
 
 node "$SRC/scripts/setup.mjs" --from "$SRC" --prefix "$PREFIX"
 echo
-echo "macOS / Linux install complete. Open a new terminal if PATH was updated."
+echo "macOS / Linux install complete. Open a new terminal so PATH picks up ~/.local/bin."

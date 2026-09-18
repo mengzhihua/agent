@@ -7,7 +7,7 @@ import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 
@@ -53,7 +53,7 @@ function defaultPrefix() {
   return process.env.AGENT_PREFIX || path.join(os.homedir(), ".agent");
 }
 
-function linkUnix(shim, prefix) {
+function linkUnix(shim) {
   const localBin = path.join(os.homedir(), ".local", "bin");
   fs.mkdirSync(localBin, { recursive: true });
   const dest = path.join(localBin, "agent");
@@ -68,21 +68,80 @@ function linkUnix(shim, prefix) {
     fs.copyFileSync(shim, dest);
     fs.chmodSync(dest, 0o755);
   }
-  const pathEnv = process.env.PATH ?? "";
-  if (!pathEnv.split(path.delimiter).some((dir) => path.resolve(dir) === path.resolve(localBin))) {
-    console.log(`Add ${localBin} to PATH if \`agent\` is not found.`);
-  }
   return dest;
 }
 
 function linkWindows(shim) {
-  const userPath = process.env.Path || process.env.PATH || "";
-  const binDir = path.dirname(shim);
-  if (!userPath.split(";").some((dir) => dir.toLowerCase() === binDir.toLowerCase())) {
-    console.log(`Add ${binDir} to your user PATH, then open a new terminal.`);
-    console.log(`  setx PATH "${binDir};%PATH%"`);
-  }
   return shim;
+}
+
+function pathSetupCandidates(from, prefix) {
+  return [
+    path.join(from, "dist", "path_setup.js"),
+    path.join(prefix, "src", "dist", "path_setup.js"),
+    path.join(here, "..", "dist", "path_setup.js"),
+  ];
+}
+
+async function loadPathSetup(from, prefix) {
+  for (const mod of pathSetupCandidates(from, prefix)) {
+    if (!fs.existsSync(mod)) continue;
+    return await import(pathToFileURL(mod).href);
+  }
+  return null;
+}
+
+function fallbackStripPath(binDir) {
+  if (process.platform === "win32") {
+    const escaped = binDir.replace(/'/g, "''");
+    spawnSync(
+      "powershell",
+      [
+        "-NoProfile",
+        "-Command",
+        `$dir = '${escaped}'; $current = [Environment]::GetEnvironmentVariable('Path', 'User'); if ($null -eq $current) { return }; $parts = @(); foreach ($item in $current.Split(';')) { if (-not $item) { continue }; if ($item.TrimEnd('\\').ToLower() -eq $dir.TrimEnd('\\').ToLower()) { continue }; $parts += $item }; [Environment]::SetEnvironmentVariable('Path', ($parts -join ';'), 'User')`,
+      ],
+      { stdio: "ignore", windowsHide: true },
+    );
+    return;
+  }
+  const home = os.homedir();
+  fs.rmSync(path.join(home, ".agent", "env.sh"), { force: true });
+  const marker = "# agent PATH";
+  for (const name of [".profile", ".bashrc", ".zshrc", ".zprofile"]) {
+    const file = path.join(home, name);
+    if (!fs.existsSync(file)) continue;
+    const existing = fs.readFileSync(file, "utf8");
+    if (!existing.includes(marker)) continue;
+    const lines = existing.split(/\r?\n/);
+    const out = [];
+    for (let i = 0; i < lines.length; i++) {
+      if (lines[i].includes(marker)) {
+        if (i + 1 < lines.length) i += 1;
+        if (i + 1 < lines.length && lines[i + 1] === "") i += 1;
+        continue;
+      }
+      out.push(lines[i]);
+    }
+    while (out.length > 0 && out[out.length - 1] === "") out.pop();
+    fs.writeFileSync(file, out.length === 0 ? "" : `${out.join("\n")}\n`);
+  }
+}
+
+async function applyPath(from, prefix, binDir) {
+  const api = await loadPathSetup(from, prefix);
+  if (!api?.ensureUserPath) return;
+  const result = api.ensureUserPath(binDir);
+  console.log(result.message);
+}
+
+async function stripPath(from, prefix, binDir) {
+  const api = await loadPathSetup(from, prefix);
+  if (api?.removeUserPath) {
+    api.removeUserPath(binDir);
+    return;
+  }
+  fallbackStripPath(binDir);
 }
 
 function uninstall(prefix) {
@@ -93,53 +152,63 @@ function uninstall(prefix) {
     fs.rmSync(path.join(os.homedir(), ".local", "bin", "agent"), { force: true });
   }
   fs.rmSync(src, { recursive: true, force: true });
-  console.log(`Removed ${prefix} checkout and shims.`);
 }
 
-const prefix = path.resolve(argValue("--prefix", defaultPrefix()));
-if (hasFlag("--uninstall")) {
-  uninstall(prefix);
-  process.exit(0);
+async function main() {
+  const prefix = path.resolve(argValue("--prefix", defaultPrefix()));
+  const from = path.resolve(argValue("--from", path.join(here, "..")));
+  const pathBin = process.platform === "win32" ? path.join(prefix, "bin") : path.join(os.homedir(), ".local", "bin");
+  if (hasFlag("--uninstall")) {
+    await stripPath(from, prefix, pathBin);
+    uninstall(prefix);
+    console.log(`Removed ${prefix} checkout and shims.`);
+    return;
+  }
+
+  const pkg = path.join(from, "package.json");
+  if (!fs.existsSync(pkg)) {
+    throw new Error(`not an agent checkout: ${from}`);
+  }
+
+  if (!hasFlag("--skip-build")) {
+    console.log(`Building agent from ${from}`);
+    run("npm", ["install"], from);
+    run("npm", ["run", "build"], from);
+  } else {
+    console.log(`Using existing build in ${from}`);
+  }
+  const cli = path.join(from, "dist", "cli.js");
+  if (!fs.existsSync(cli)) {
+    throw new Error("build did not produce dist/cli.js");
+  }
+
+  const binDir = path.join(prefix, "bin");
+  fs.mkdirSync(binDir, { recursive: true });
+  let shim;
+  if (process.platform === "win32") {
+    shim = path.join(binDir, "agent.cmd");
+    writeFile(shim, windowsShim(from));
+  } else {
+    shim = path.join(binDir, "agent");
+    writeFile(shim, unixShim(from));
+  }
+
+  if (!hasFlag("--no-link")) {
+    const linked = process.platform === "win32" ? linkWindows(shim) : linkUnix(shim);
+    console.log(`Installed ${linked}`);
+    await applyPath(from, prefix, pathBin);
+  } else {
+    console.log(`Installed ${shim}`);
+  }
+
+  const check = spawnSync(process.execPath, [cli, "--version"], { encoding: "utf8" });
+  if (check.status === 0) {
+    console.log(`agent ${String(check.stdout).trim()}  (${process.platform}/${process.arch})`);
+  }
+  console.log("Next: agent doctor");
 }
 
-const from = path.resolve(argValue("--from", path.join(here, "..")));
-const pkg = path.join(from, "package.json");
-if (!fs.existsSync(pkg)) {
-  throw new Error(`not an agent checkout: ${from}`);
-}
-
-if (!hasFlag("--skip-build")) {
-  console.log(`Building agent from ${from}`);
-  run("npm", ["install"], from);
-  run("npm", ["run", "build"], from);
-} else {
-  console.log(`Using existing build in ${from}`);
-}
-const cli = path.join(from, "dist", "cli.js");
-if (!fs.existsSync(cli)) {
-  throw new Error("build did not produce dist/cli.js");
-}
-
-const binDir = path.join(prefix, "bin");
-fs.mkdirSync(binDir, { recursive: true });
-let shim;
-if (process.platform === "win32") {
-  shim = path.join(binDir, "agent.cmd");
-  writeFile(shim, windowsShim(from));
-} else {
-  shim = path.join(binDir, "agent");
-  writeFile(shim, unixShim(from));
-}
-
-if (!hasFlag("--no-link")) {
-  const linked = process.platform === "win32" ? linkWindows(shim) : linkUnix(shim, prefix);
-  console.log(`Installed ${linked}`);
-} else {
-  console.log(`Installed ${shim}`);
-}
-
-const check = spawnSync(process.execPath, [cli, "--version"], { encoding: "utf8" });
-if (check.status === 0) {
-  console.log(`agent ${String(check.stdout).trim()}  (${process.platform}/${process.arch})`);
-}
-console.log("Next: agent doctor");
+main().catch((err) => {
+  console.error(err instanceof Error ? err.message : err);
+  process.exitCode = 1;
+});

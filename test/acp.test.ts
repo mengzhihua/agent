@@ -31,6 +31,7 @@ import {
 import { encodeMessage, extractMessages } from "../src/protocol/framing.js";
 import { ScriptedProvider } from "../src/provider/scripted.js";
 import { SessionStore } from "../src/session/store.js";
+import { packageVersion } from "../src/version.js";
 
 async function hostWith(
   provider: ScriptedProvider,
@@ -80,7 +81,7 @@ describe("ACP-shaped protocol", () => {
         loadSession: true,
         sessionCapabilities: { additionalDirectories: {}, resume: {}, close: {}, list: {}, delete: {} },
       },
-      agentInfo: { name: "agent", version: "0.18.0" },
+      agentInfo: { name: "agent", version: packageVersion() },
     });
 
     const created = (await dispatch(

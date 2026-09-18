@@ -27,6 +27,14 @@ describe("one-click setup", () => {
     const doctor = spawnSync(process.execPath, [path.join(root, "dist/cli.js"), "doctor"], { encoding: "utf8" });
     expect(doctor.status).toBe(0);
     expect(doctor.stdout).toContain(`agent ${packageVersion()}`);
+    const config = spawnSync(process.execPath, [path.join(root, "dist/cli.js"), "config"], { encoding: "utf8" });
+    expect(config.status).toBe(0);
+    expect(config.stdout).toMatch(/^config /m);
+    const completion = spawnSync(process.execPath, [path.join(root, "dist/cli.js"), "completion", "bash"], {
+      encoding: "utf8",
+    });
+    expect(completion.status).toBe(0);
+    expect(completion.stdout).toContain("complete -F _agent agent");
   });
 
   it("ships unix and windows installers", () => {
@@ -34,7 +42,9 @@ describe("one-click setup", () => {
     const ps = fs.readFileSync(path.join(root, "scripts/install.ps1"), "utf8");
     expect(sh).toContain("curl");
     expect(sh).toContain("setup.mjs");
+    expect(sh).toContain("PATH");
     expect(ps).toContain("Invoke-WebRequest");
     expect(ps).toContain("setup.mjs");
+    expect(ps).toContain("PATH");
   });
 });

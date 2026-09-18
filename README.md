@@ -2,7 +2,7 @@
 
 通用 agent 软件：一个极简的模型–工具循环，外面套 harness。
 
-当前进度：**期 17 — 跨平台一键安装**。
+当前进度：**期 18 — 安装进 PATH、自更新与用户配置**。
 
 - [行业研究](docs/industry-agent-research.md) — Codex、Claude Code、Grok Build、Devin、Cursor、Gemini CLI、Manus、OpenHands 等怎么做，以及通用 harness 的收敛形态
 - [期 0](docs/phase-0.md)
@@ -23,6 +23,7 @@
 - [期 15](docs/phase-15.md)
 - [期 16](docs/phase-16.md)
 - [期 17](docs/phase-17.md)
+- [期 18](docs/phase-18.md)
 
 ## 研究结论（极简）
 
@@ -50,7 +51,14 @@ Windows PowerShell：
 irm https://raw.githubusercontent.com/mengzhihua/agent/main/scripts/install.ps1 | iex
 ```
 
-装好后执行 `agent doctor` 查看 sandbox、Chrome/Edge 和安装路径。卸载时给安装脚本加 `--uninstall`。
+装好后执行 `agent doctor`。新开一个终端即可直接运行 `agent`（安装脚本会改用户 PATH）。之后可用 `agent update` / `agent uninstall`。
+
+默认配置写在 `~/.agent/config.json`（命令行和环境变量优先）。补全：
+
+```bash
+agent completion bash >> ~/.bashrc
+agent completion zsh  >> ~/.zshrc
+```
 
 开发者从仓库安装：
 
@@ -73,7 +81,11 @@ agent --browser chrome -y -p "Open a page and screenshot"
 agent --list
 agent --resume <id> -p "continue"
 agent acp             # JSON-RPC（NDJSON 或 Content-Length；ask 时向客户端要权限；fs/terminal/MCP 走编辑器）
-agent doctor          # 检查 node / sandbox / 浏览器 / 安装路径
+agent doctor          # 检查 node / sandbox / 浏览器 / PATH / 配置
+agent config          # 打印生效配置
+agent update          # 重跑一键安装
+agent uninstall       # 移除 shim 和 PATH
+agent completion bash # 输出 bash 补全
 agent                 # 交互（/plan /execute /skills；ask_user 走终端，ACP 走 elicitation）
 ```
 
@@ -97,4 +109,5 @@ MCP 工具以 `mcp__<server>__<tool>` 接在后面。
 | `.agent/hooks.json` | PreToolUse / PostToolUse / Stop |
 
 会话存在 `$AGENT_HOME/sessions`（默认 `~/.agent/sessions`）。
+默认配置 `$AGENT_HOME/config.json`。
 交付物存在 `$AGENT_ARTIFACTS` 或 `<workspace>/artifacts`。

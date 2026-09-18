@@ -13,7 +13,7 @@
 5. grep 在 PATH 上找 `rg`/`rg.exe`，找不到就走内置 walker
 6. GitHub Actions：ubuntu / macos / windows + Node 22
 
-不做：npm 公有源发布（包名 `agent` 太泛）、打单文件原生二进制、Docker workspace、云端 VM、Playwright、SSE、图片 prompt。
+不做：npm 公有源发布（包名 `agent` 太泛）、打单文件原生二进制、Docker workspace、云端 VM、Playwright、SSE、图片 prompt。PATH / update / 用户配置见 [期 18](phase-18.md)。
 
 ## 怎么装
 
