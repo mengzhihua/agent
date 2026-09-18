@@ -125,6 +125,14 @@ export class AgentHost {
     runtime.files = diskFileIo(runtime.workspace, runtime.extraRoots);
   }
 
+  async closeSession(sessionId: string): Promise<void> {
+    const runtime = this.runtimes.get(sessionId);
+    if (!runtime) return;
+    this.runtimes.delete(sessionId);
+    await runtime.browser.close();
+    await runtime.mcp?.close();
+  }
+
   async *prompt(sessionId: string, userText: string, signal: AbortSignal): AsyncGenerator<LoopEvent> {
     const runtime = this.runtimeFor(sessionId);
     yield* runTurn({

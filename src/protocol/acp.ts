@@ -1,7 +1,7 @@
 import path from "node:path";
 import { stdin, stdout, stderr } from "node:process";
 import type { AgentHost } from "../host.js";
-import type { ApprovalRequest, LoopEvent, Risk, RunMode } from "../types.js";
+import type { ApprovalRequest, LoopEvent, Risk, RunMode, SessionEvent } from "../types.js";
 import { encodeMessage, extractMessages, type Framing } from "./framing.js";
 import { createAcpFileIo, hasClientFs, parseClientCapabilities } from "./fs.js";
 import type { NotifyFn, RequestFn } from "./rpc.js";
@@ -221,9 +221,9 @@ export async function dispatch(
           loadSession: true,
           promptCapabilities: { image: false, audio: false, embeddedContext: false },
           mcpCapabilities: { http: true, sse: false },
-          sessionCapabilities: { additionalDirectories: {} },
+          sessionCapabilities: { additionalDirectories: {}, resume: {}, close: {} },
         },
-        agentInfo: { name: "agent", version: "0.10.0" },
+        agentInfo: { name: "agent", version: "0.11.0" },
         authMethods: [],
       };
     case "authenticate":
@@ -236,12 +236,25 @@ export async function dispatch(
       return { sessionId, modes: modeState(host.config.runMode) };
     }
     case "session/load": {
-      const sessionId = String(req.params?.sessionId ?? "");
-      host.resume(sessionId, sessionCwd(req.params));
-      sessions.add(sessionId);
-      host.setSessionRoots(sessionId, parseAdditionalDirectories(req.params?.additionalDirectories));
-      await host.attachSessionMcp(sessionId, req.params?.mcpServers);
+      const sessionId = await restoreSession(host, sessions, req.params);
+      for (const event of host.store.read(sessionId)) {
+        const update = toAcpReplayUpdate(event);
+        if (update) notify({ sessionId, update });
+      }
+      return null;
+    }
+    case "session/resume": {
+      const sessionId = await restoreSession(host, sessions, req.params);
       return { sessionId, modes: modeState(host.config.runMode) };
+    }
+    case "session/close": {
+      const sessionId = String(req.params?.sessionId ?? "");
+      if (!sessions.has(sessionId)) throw new Error("unknown session");
+      controllers.get(sessionId)?.abort();
+      controllers.delete(sessionId);
+      await host.closeSession(sessionId);
+      sessions.delete(sessionId);
+      return {};
     }
     case "session/set_mode": {
       const sessionId = String(req.params?.sessionId ?? "");
@@ -314,6 +327,19 @@ export async function dispatch(
   }
 }
 
+async function restoreSession(
+  host: AgentHost,
+  sessions: Set<string>,
+  params?: Record<string, unknown>,
+): Promise<string> {
+  const sessionId = String(params?.sessionId ?? "");
+  host.resume(sessionId, sessionCwd(params));
+  sessions.add(sessionId);
+  host.setSessionRoots(sessionId, parseAdditionalDirectories(params?.additionalDirectories));
+  await host.attachSessionMcp(sessionId, params?.mcpServers);
+  return sessionId;
+}
+
 function sessionCwd(params?: Record<string, unknown>): string | undefined {
   const cwd = params?.cwd;
   if (typeof cwd !== "string" || !cwd.trim()) return undefined;
@@ -356,6 +382,55 @@ export function promptText(prompt: unknown): string {
       .join("");
   }
   return "";
+}
+
+export function toAcpReplayUpdate(event: SessionEvent): Record<string, unknown> | undefined {
+  switch (event.type) {
+    case "user":
+      return {
+        sessionUpdate: "user_message_chunk",
+        messageId: event.id,
+        content: { type: "text", text: event.text },
+      };
+    case "assistant":
+      if (!event.text) return undefined;
+      return {
+        sessionUpdate: "agent_message_chunk",
+        messageId: event.id,
+        content: { type: "text", text: event.text },
+      };
+    case "tool_call":
+      return {
+        sessionUpdate: "tool_call",
+        toolCallId: event.callId,
+        title: event.name,
+        kind: toolKind(event.name),
+        status: "in_progress",
+        rawInput: event.arguments,
+      };
+    case "tool_result":
+      return {
+        sessionUpdate: "tool_call_update",
+        toolCallId: event.callId,
+        status: event.isError ? "failed" : "completed",
+        rawOutput: event.content,
+        content: [
+          {
+            type: "content",
+            content: { type: "text", text: event.content },
+          },
+        ],
+      };
+    case "plan":
+      return {
+        sessionUpdate: "plan",
+        entries: event.steps.map((step) => ({ content: step.title, status: step.status })),
+      };
+    case "artifact":
+      return { sessionUpdate: "artifact", artifact: event.artifact };
+    default:
+      return undefined;
+  }
 }
 
 export function toAcpUpdate(event: LoopEvent): Record<string, unknown> {
