@@ -25,6 +25,8 @@ export {
   parseSlashCommand,
   AVAILABLE_COMMANDS,
   acpConfigOptions,
+  contextWindowSize,
+  acpUsageUpdate,
 } from "./protocol/acp.js";
 export { parseClientCapabilities, createAcpFileIo, hasClientFs } from "./protocol/fs.js";
 export { createAcpTerminal, clientTerminalEnabled } from "./protocol/terminal.js";

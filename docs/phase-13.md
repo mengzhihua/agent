@@ -12,7 +12,7 @@
 4. `session/set_mode`、slash 命令也会发 `config_option_update`
 5. 布尔 config 未做：审批用 select，不依赖客户端 `session.configOptions.boolean`
 
-不做（以后）：SSE 传输、Docker workspace、云端 VM、Playwright 包、usage_update。
+不做（以后）：SSE 传输、Docker workspace、云端 VM、Playwright 包。上下文用量见 [期 14](phase-14.md)。
 
 ## 怎么跑
 

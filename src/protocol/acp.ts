@@ -1,9 +1,11 @@
 import path from "node:path";
 import { stdin, stdout, stderr } from "node:process";
 import type { AgentHost } from "../host.js";
+import { assembleMessages } from "../loop/assemble.js";
 import { autoApprover } from "../permissions/policy.js";
 import { sessionTitle, type SessionListRow } from "../session/store.js";
 import type { AgentConfig, ApprovalMode, ApprovalRequest, LoopEvent, Risk, RunMode, SessionEvent } from "../types.js";
+import { estimateTokens } from "../workspace.js";
 import { encodeMessage, extractMessages, type Framing } from "./framing.js";
 import { createAcpFileIo, hasClientFs, parseClientCapabilities } from "./fs.js";
 import type { NotifyFn, RequestFn } from "./rpc.js";
@@ -130,6 +132,27 @@ function notifyConfigOptions(host: AgentHost, sessionId: string, notify: NotifyF
     sessionId,
     update: { sessionUpdate: "config_option_update", configOptions: acpConfigOptions(host) },
   });
+}
+
+export function contextWindowSize(model: string, compactTokens: number): number {
+  const id = model.toLowerCase();
+  if (id.includes("claude")) return 200_000;
+  if (id.includes("grok")) return 256_000;
+  if (id.includes("gpt-4.1")) return 1_047_576;
+  if (id.includes("gpt-4o") || id.includes("gpt-4")) return 128_000;
+  return Math.max(compactTokens, 128_000);
+}
+
+export function acpUsageUpdate(host: AgentHost, sessionId: string): { sessionUpdate: "usage_update"; used: number; size: number } {
+  const size = contextWindowSize(host.config.model, host.config.compactTokens);
+  if (!host.store.exists(sessionId)) return { sessionUpdate: "usage_update", used: 0, size };
+  const messages = assembleMessages(host.store.read(sessionId));
+  const used = messages.length === 0 ? 0 : estimateTokens(messages);
+  return { sessionUpdate: "usage_update", used, size };
+}
+
+function notifyUsage(host: AgentHost, sessionId: string, notify: NotifyFn): void {
+  notify({ sessionId, update: acpUsageUpdate(host, sessionId) });
 }
 
 export function permissionKind(risk: Risk): string {
@@ -312,7 +335,7 @@ export async function dispatch(
           mcpCapabilities: { http: true, sse: false },
           sessionCapabilities: { additionalDirectories: {}, resume: {}, close: {}, list: {}, delete: {} },
         },
-        agentInfo: { name: "agent", version: "0.14.0" },
+        agentInfo: { name: "agent", version: "0.15.0" },
         authMethods: [],
       };
     case "authenticate":
@@ -323,6 +346,7 @@ export async function dispatch(
       host.setSessionRoots(sessionId, parseAdditionalDirectories(req.params?.additionalDirectories));
       await host.attachSessionMcp(sessionId, req.params?.mcpServers);
       notifyAvailableCommands(sessionId, notify);
+      notifyUsage(host, sessionId, notify);
       return { sessionId, modes: modeState(host.config.runMode), configOptions: acpConfigOptions(host) };
     }
     case "session/load": {
@@ -333,11 +357,13 @@ export async function dispatch(
       }
       notifyAvailableCommands(sessionId, notify);
       notifyConfigOptions(host, sessionId, notify);
+      notifyUsage(host, sessionId, notify);
       return null;
     }
     case "session/resume": {
       const sessionId = await restoreSession(host, sessions, req.params);
       notifyAvailableCommands(sessionId, notify);
+      notifyUsage(host, sessionId, notify);
       return { sessionId, modes: modeState(host.config.runMode), configOptions: acpConfigOptions(host) };
     }
     case "session/close": {
@@ -379,6 +405,7 @@ export async function dispatch(
         notify({ sessionId, update: { sessionUpdate: "current_mode_update", currentModeId: modeState(host.config.runMode).currentModeId } });
       }
       notifyConfigOptions(host, sessionId, notify);
+      if (configId === "model") notifyUsage(host, sessionId, notify);
       return { configOptions: acpConfigOptions(host) };
     }
     case "session/cancel": {
@@ -392,10 +419,14 @@ export async function dispatch(
       const rawPrompt = promptText(req.params?.prompt);
       const slash = parseSlashCommand(rawPrompt);
       if (slash.name && applySlashCommand(host, sessionId, slash, notify) === "done") {
+        notifyUsage(host, sessionId, notify);
         return { stopReason: "end_turn" };
       }
       const prompt = slash.name ? slash.rest : rawPrompt;
-      if (!prompt) return { stopReason: "end_turn" };
+      if (!prompt) {
+        notifyUsage(host, sessionId, notify);
+        return { stopReason: "end_turn" };
+      }
       const controller = new AbortController();
       controllers.set(sessionId, controller);
       const previousApprover = host.approver;
@@ -433,10 +464,12 @@ export async function dispatch(
       }
       try {
         for await (const event of host.prompt(sessionId, prompt, controller.signal)) {
+          if (event.type === "usage") continue;
           notify({ sessionId, update: toAcpUpdate(event) });
         }
         const info = sessionInfoUpdate(host, sessionId);
         if (info) notify({ sessionId, update: info });
+        notifyUsage(host, sessionId, notify);
         return { stopReason: controller.signal.aborted ? "cancelled" : "end_turn" };
       } finally {
         host.approver = previousApprover;
