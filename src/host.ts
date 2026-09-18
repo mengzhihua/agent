@@ -74,6 +74,16 @@ export class AgentHost {
     this.config = { ...this.config, runMode };
   }
 
+  setApprovalMode(approvalMode: AgentConfig["approvalMode"]): void {
+    this.config = { ...this.config, approvalMode };
+  }
+
+  setModel(model: string): void {
+    const next = model.trim();
+    if (!next) throw new Error("invalid model");
+    this.config = { ...this.config, model: next };
+  }
+
   setWorkspace(workspace: string): void {
     this.config = { ...this.config, workspace: path.resolve(workspace) };
   }
