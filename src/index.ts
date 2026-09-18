@@ -30,6 +30,12 @@ export {
   acpUsageUpdate,
 } from "./protocol/acp.js";
 export { parseClientCapabilities, createAcpFileIo, hasClientFs } from "./protocol/fs.js";
+export {
+  parseElicitationCapabilities,
+  parseElicitationResult,
+  askUserSchema,
+  elicitAskUser,
+} from "./protocol/elicitation.js";
 export { createAcpTerminal, clientTerminalEnabled } from "./protocol/terminal.js";
 export { parseAcpMcpServers } from "./protocol/mcp.js";
 export { diskFileIo } from "./files/io.js";

@@ -2,7 +2,7 @@
 
 通用 agent 软件：一个极简的模型–工具循环，外面套 harness。
 
-当前进度：**期 15 — ACP 工具 diff 与 locations**。
+当前进度：**期 16 — ACP elicitation**。
 
 - [行业研究](docs/industry-agent-research.md) — Codex、Claude Code、Grok Build、Devin、Cursor、Gemini CLI、Manus、OpenHands 等怎么做，以及通用 harness 的收敛形态
 - [期 0](docs/phase-0.md)
@@ -21,6 +21,7 @@
 - [期 13](docs/phase-13.md)
 - [期 14](docs/phase-14.md)
 - [期 15](docs/phase-15.md)
+- [期 16](docs/phase-16.md)
 
 ## 研究结论（极简）
 
@@ -52,7 +53,7 @@ npm run agent -- --browser chrome -y -p "Open a page and screenshot"
 npm run agent -- --list
 npm run agent -- --resume <id> -p "continue"
 npm run agent -- acp             # JSON-RPC（NDJSON 或 Content-Length；ask 时向客户端要权限；fs/terminal/MCP 走编辑器）
-npm run agent                    # 交互（/plan /execute /skills；ask_user 走终端）
+npm run agent                    # 交互（/plan /execute /skills；ask_user 走终端，ACP 走 elicitation）
 ```
 
 无 TTY 且未加 `-y` 时，写操作和 shell 会被拒绝。工作区不必是 git 仓库；交付物默认写到 `artifacts/`。Linux 上安装 `bubblewrap` 后，shell 默认无网络、只能写 workspace（`AGENT_SANDBOX=none` 可关）。找到本机 Chrome 时，`browser` 走 CDP（`AGENT_BROWSER=html` 可退回静态 fetch）。

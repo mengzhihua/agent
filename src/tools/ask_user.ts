@@ -24,7 +24,7 @@ export function askUserTool(_config: AgentConfig): ToolHandler {
       if (!ctx.runtime?.askUser) {
         throw new Error(`No human is attached. Question was: ${question}`);
       }
-      const answer = await ctx.runtime.askUser({ question, choices });
+      const answer = await ctx.runtime.askUser({ question, choices, callId: ctx.callId });
       return `User: ${answer}`;
     },
   };
