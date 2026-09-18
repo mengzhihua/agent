@@ -14,7 +14,13 @@ export { ChromeDriver, createBrowserDriver, findChrome } from "./browser/chrome.
 export { createSessionRuntime } from "./runtime.js";
 export { detectSandboxBackend, planShell } from "./sandbox/index.js";
 export { runEvalFile, runEvalTarget } from "./eval/run.js";
-export { dispatch, bindAcpApprover, parsePermissionOutcome, parseAdditionalDirectories } from "./protocol/acp.js";
+export {
+  dispatch,
+  bindAcpApprover,
+  parsePermissionOutcome,
+  parseAdditionalDirectories,
+  toAcpReplayUpdate,
+} from "./protocol/acp.js";
 export { parseClientCapabilities, createAcpFileIo, hasClientFs } from "./protocol/fs.js";
 export { createAcpTerminal, clientTerminalEnabled } from "./protocol/terminal.js";
 export { parseAcpMcpServers } from "./protocol/mcp.js";

@@ -12,6 +12,7 @@ import {
   dispatch,
   parseAdditionalDirectories,
   parsePermissionOutcome,
+  toAcpReplayUpdate,
 } from "../src/protocol/acp.js";
 import { parseAcpMcpServers } from "../src/protocol/mcp.js";
 import { parseClientCapabilities } from "../src/protocol/fs.js";
@@ -66,8 +67,9 @@ describe("ACP-shaped protocol", () => {
       protocolVersion: ACP_PROTOCOL_VERSION,
       agentCapabilities: {
         loadSession: true,
-        sessionCapabilities: { additionalDirectories: {} },
+        sessionCapabilities: { additionalDirectories: {}, resume: {}, close: {} },
       },
+      agentInfo: { name: "agent", version: "0.11.0" },
     });
 
     const created = (await dispatch(
@@ -636,6 +638,222 @@ describe("ACP additionalDirectories", () => {
       (note) => notes.push(note),
     );
     expect(JSON.stringify(notes)).toContain("export const n = 1");
+    await host.close();
+  });
+});
+
+describe("ACP session load / resume / close", () => {
+  it("maps transcript events for replay", () => {
+    expect(
+      toAcpReplayUpdate({ type: "session_meta", id: "s1", timestamp: "t", cwd: "/", model: "m", provider: "scripted" }),
+    ).toBeUndefined();
+    expect(toAcpReplayUpdate({ type: "compact", id: "c1", timestamp: "t", summary: "old" })).toBeUndefined();
+    expect(toAcpReplayUpdate({ type: "user", id: "u1", timestamp: "t", text: "hi" })).toEqual({
+      sessionUpdate: "user_message_chunk",
+      messageId: "u1",
+      content: { type: "text", text: "hi" },
+    });
+    expect(toAcpReplayUpdate({ type: "assistant", id: "a1", timestamp: "t", text: "hello" })).toMatchObject({
+      sessionUpdate: "agent_message_chunk",
+      messageId: "a1",
+    });
+    expect(
+      toAcpReplayUpdate({
+        type: "tool_call",
+        id: "t1",
+        timestamp: "t",
+        callId: "c1",
+        name: "read",
+        arguments: { path: "a.ts" },
+      }),
+    ).toMatchObject({ sessionUpdate: "tool_call", toolCallId: "c1", kind: "read", status: "in_progress" });
+    expect(
+      toAcpReplayUpdate({
+        type: "tool_result",
+        id: "t2",
+        timestamp: "t",
+        callId: "c1",
+        name: "read",
+        content: "ok",
+      }),
+    ).toMatchObject({ sessionUpdate: "tool_call_update", toolCallId: "c1", status: "completed" });
+  });
+
+  it("replays history on session/load and returns null", async () => {
+    const provider = new ScriptedProvider([
+      { toolCalls: [{ id: "c1", name: "read", arguments: { path: "note.txt" } }] },
+      { text: "saw note" },
+      { text: "still here" },
+    ]);
+    const host = await hostWith(provider);
+    fs.writeFileSync(path.join(host.config.workspace, "note.txt"), "hello note\n");
+    const sessions = new Set<string>();
+    const controllers = new Map<string, AbortController>();
+    const created = (await dispatch(
+      host,
+      sessions,
+      controllers,
+      { jsonrpc: "2.0", id: 1, method: "session/new" },
+      () => undefined,
+    )) as { sessionId: string };
+
+    await dispatch(
+      host,
+      sessions,
+      controllers,
+      {
+        jsonrpc: "2.0",
+        id: 2,
+        method: "session/prompt",
+        params: { sessionId: created.sessionId, prompt: "read note" },
+      },
+      () => undefined,
+    );
+
+    const notes: unknown[] = [];
+    const loaded = await dispatch(
+      host,
+      sessions,
+      controllers,
+      {
+        jsonrpc: "2.0",
+        id: 3,
+        method: "session/load",
+        params: { sessionId: created.sessionId },
+      },
+      (note) => notes.push(note),
+    );
+    expect(loaded).toBeNull();
+    const dumped = JSON.stringify(notes);
+    expect(dumped).toContain("user_message_chunk");
+    expect(dumped).toContain("read note");
+    expect(dumped).toContain("agent_message_chunk");
+    expect(dumped).toContain("saw note");
+    expect(dumped).toContain("tool_call");
+    expect(dumped).toContain("hello note");
+    expect(dumped).not.toContain("still here");
+    await host.close();
+  });
+
+  it("restores on session/resume without replaying", async () => {
+    const provider = new ScriptedProvider([{ text: "first" }, { text: "second" }]);
+    const host = await hostWith(provider);
+    const sessions = new Set<string>();
+    const controllers = new Map<string, AbortController>();
+    const created = (await dispatch(
+      host,
+      sessions,
+      controllers,
+      { jsonrpc: "2.0", id: 1, method: "session/new" },
+      () => undefined,
+    )) as { sessionId: string };
+
+    await dispatch(
+      host,
+      sessions,
+      controllers,
+      {
+        jsonrpc: "2.0",
+        id: 2,
+        method: "session/prompt",
+        params: { sessionId: created.sessionId, prompt: "hi" },
+      },
+      () => undefined,
+    );
+
+    const notes: unknown[] = [];
+    const resumed = (await dispatch(
+      host,
+      sessions,
+      controllers,
+      {
+        jsonrpc: "2.0",
+        id: 3,
+        method: "session/resume",
+        params: { sessionId: created.sessionId },
+      },
+      (note) => notes.push(note),
+    )) as { sessionId: string; modes: { currentModeId: string } };
+    expect(resumed.sessionId).toBe(created.sessionId);
+    expect(resumed.modes.currentModeId).toBe("execute");
+    expect(notes).toEqual([]);
+
+    const after: unknown[] = [];
+    await dispatch(
+      host,
+      sessions,
+      controllers,
+      {
+        jsonrpc: "2.0",
+        id: 4,
+        method: "session/prompt",
+        params: { sessionId: created.sessionId, prompt: "again" },
+      },
+      (note) => after.push(note),
+    );
+    expect(JSON.stringify(after)).toContain("second");
+    expect(JSON.stringify(after)).not.toContain("first");
+    await host.close();
+  });
+
+  it("closes an active session and rejects later prompts", async () => {
+    const host = await hostWith(new ScriptedProvider([{ text: "ok" }]));
+    const sessions = new Set<string>();
+    const controllers = new Map<string, AbortController>();
+    const created = (await dispatch(
+      host,
+      sessions,
+      controllers,
+      { jsonrpc: "2.0", id: 1, method: "session/new" },
+      () => undefined,
+    )) as { sessionId: string };
+
+    const closed = await dispatch(
+      host,
+      sessions,
+      controllers,
+      { jsonrpc: "2.0", id: 2, method: "session/close", params: { sessionId: created.sessionId } },
+      () => undefined,
+    );
+    expect(closed).toEqual({});
+    expect(sessions.has(created.sessionId)).toBe(false);
+
+    await expect(
+      dispatch(
+        host,
+        sessions,
+        controllers,
+        {
+          jsonrpc: "2.0",
+          id: 3,
+          method: "session/prompt",
+          params: { sessionId: created.sessionId, prompt: "hi" },
+        },
+        () => undefined,
+      ),
+    ).rejects.toThrow("unknown session");
+
+    await expect(
+      dispatch(
+        host,
+        sessions,
+        controllers,
+        { jsonrpc: "2.0", id: 4, method: "session/close", params: { sessionId: created.sessionId } },
+        () => undefined,
+      ),
+    ).rejects.toThrow("unknown session");
+
+    const notes: unknown[] = [];
+    const loaded = await dispatch(
+      host,
+      sessions,
+      controllers,
+      { jsonrpc: "2.0", id: 5, method: "session/load", params: { sessionId: created.sessionId } },
+      (note) => notes.push(note),
+    );
+    expect(loaded).toBeNull();
+    expect(sessions.has(created.sessionId)).toBe(true);
+    expect(JSON.stringify(notes)).not.toContain("user_message_chunk");
     await host.close();
   });
 });

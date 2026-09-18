@@ -12,7 +12,7 @@
 4. 额外根里的文件在工具输出里用绝对 POSIX 路径，避免和 cwd 相对路径撞名
 5. bubblewrap 把额外根 bind 进沙箱（目录存在时）
 
-不做（以后）：SSE 传输、Docker workspace、云端 VM、Playwright 包。
+不做（以后）：SSE 传输、Docker workspace、云端 VM、Playwright 包。会话回放 / resume / close 见 [期 10](phase-10.md)。
 
 ## 怎么跑
 
