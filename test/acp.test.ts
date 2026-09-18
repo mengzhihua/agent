@@ -12,6 +12,8 @@ import {
   dispatch,
   parseAdditionalDirectories,
   parsePermissionOutcome,
+  listAcpSessions,
+  parseListCursor,
   toAcpReplayUpdate,
 } from "../src/protocol/acp.js";
 import { parseAcpMcpServers } from "../src/protocol/mcp.js";
@@ -67,9 +69,9 @@ describe("ACP-shaped protocol", () => {
       protocolVersion: ACP_PROTOCOL_VERSION,
       agentCapabilities: {
         loadSession: true,
-        sessionCapabilities: { additionalDirectories: {}, resume: {}, close: {} },
+        sessionCapabilities: { additionalDirectories: {}, resume: {}, close: {}, list: {}, delete: {} },
       },
-      agentInfo: { name: "agent", version: "0.11.0" },
+      agentInfo: { name: "agent", version: "0.12.0" },
     });
 
     const created = (await dispatch(
@@ -854,6 +856,148 @@ describe("ACP session load / resume / close", () => {
     expect(loaded).toBeNull();
     expect(sessions.has(created.sessionId)).toBe(true);
     expect(JSON.stringify(notes)).not.toContain("user_message_chunk");
+    await host.close();
+  });
+});
+
+describe("ACP session list / delete", () => {
+  it("parses list cursors", () => {
+    expect(parseListCursor(undefined)).toBe(0);
+    expect(parseListCursor("3")).toBe(3);
+    expect(() => parseListCursor("nope")).toThrow("invalid cursor");
+  });
+
+  it("lists sessions with title and cwd filter", async () => {
+    const host = await hostWith(new ScriptedProvider([{ text: "hello from acp" }]));
+    const firstWorkspace = host.config.workspace;
+    const sessions = new Set<string>();
+    const controllers = new Map<string, AbortController>();
+    const other = fs.mkdtempSync(path.join(os.tmpdir(), "agent-acp-other-"));
+    const created = (await dispatch(
+      host,
+      sessions,
+      controllers,
+      { jsonrpc: "2.0", id: 1, method: "session/new" },
+      () => undefined,
+    )) as { sessionId: string };
+    const notes: unknown[] = [];
+    await dispatch(
+      host,
+      sessions,
+      controllers,
+      {
+        jsonrpc: "2.0",
+        id: 2,
+        method: "session/prompt",
+        params: { sessionId: created.sessionId, prompt: "first question" },
+      },
+      (note) => notes.push(note),
+    );
+    expect(JSON.stringify(notes)).toContain("session_info_update");
+    expect(JSON.stringify(notes)).toContain("first question");
+
+    const extra = fs.mkdtempSync(path.join(os.tmpdir(), "agent-acp-list-extra-"));
+    await dispatch(
+      host,
+      sessions,
+      controllers,
+      { jsonrpc: "2.0", id: 3, method: "session/new", params: { cwd: other, additionalDirectories: [extra] } },
+      () => undefined,
+    );
+
+    const listed = (await dispatch(
+      host,
+      sessions,
+      controllers,
+      { jsonrpc: "2.0", id: 4, method: "session/list" },
+      () => undefined,
+    )) as { sessions: Array<Record<string, unknown>>; nextCursor?: string };
+    expect(listed.nextCursor).toBeUndefined();
+    expect(listed.sessions).toHaveLength(2);
+    const mine = listed.sessions.find((row) => row.sessionId === created.sessionId);
+    expect(mine).toMatchObject({
+      sessionId: created.sessionId,
+      cwd: firstWorkspace,
+      title: "first question",
+    });
+    expect(typeof mine?.updatedAt).toBe("string");
+
+    const filtered = (await dispatch(
+      host,
+      sessions,
+      controllers,
+      { jsonrpc: "2.0", id: 5, method: "session/list", params: { cwd: other } },
+      () => undefined,
+    )) as { sessions: Array<Record<string, unknown>> };
+    expect(filtered.sessions).toHaveLength(1);
+    expect(filtered.sessions[0]?.cwd).toBe(path.resolve(other));
+    expect(filtered.sessions[0]?.additionalDirectories).toEqual([path.resolve(extra)]);
+
+    const paged = listAcpSessions(host, {}, 1);
+    expect(paged.sessions).toHaveLength(1);
+    expect(paged.nextCursor).toBe("1");
+    const rest = listAcpSessions(host, { cursor: paged.nextCursor }, 1);
+    expect(rest.sessions).toHaveLength(1);
+    expect(rest.nextCursor).toBeUndefined();
+    await host.close();
+  });
+
+  it("deletes sessions from history, including missing ids", async () => {
+    const host = await hostWith(new ScriptedProvider([{ text: "ok" }]));
+    const sessions = new Set<string>();
+    const controllers = new Map<string, AbortController>();
+    const created = (await dispatch(
+      host,
+      sessions,
+      controllers,
+      { jsonrpc: "2.0", id: 1, method: "session/new" },
+      () => undefined,
+    )) as { sessionId: string };
+
+    const deleted = await dispatch(
+      host,
+      sessions,
+      controllers,
+      { jsonrpc: "2.0", id: 2, method: "session/delete", params: { sessionId: created.sessionId } },
+      () => undefined,
+    );
+    expect(deleted).toEqual({});
+    expect(sessions.has(created.sessionId)).toBe(false);
+    expect(host.store.exists(created.sessionId)).toBe(false);
+
+    const listed = (await dispatch(
+      host,
+      sessions,
+      controllers,
+      { jsonrpc: "2.0", id: 3, method: "session/list" },
+      () => undefined,
+    )) as { sessions: unknown[] };
+    expect(listed.sessions).toEqual([]);
+
+    await expect(
+      dispatch(
+        host,
+        sessions,
+        controllers,
+        { jsonrpc: "2.0", id: 4, method: "session/delete", params: { sessionId: created.sessionId } },
+        () => undefined,
+      ),
+    ).resolves.toEqual({});
+
+    await expect(
+      dispatch(
+        host,
+        sessions,
+        controllers,
+        {
+          jsonrpc: "2.0",
+          id: 5,
+          method: "session/prompt",
+          params: { sessionId: created.sessionId, prompt: "hi" },
+        },
+        () => undefined,
+      ),
+    ).rejects.toThrow("unknown session");
     await host.close();
   });
 });

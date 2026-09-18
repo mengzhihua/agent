@@ -1,5 +1,5 @@
 export { runTurn } from "./loop/agent-loop.js";
-export { SessionStore } from "./session/store.js";
+export { SessionStore, sessionTitle } from "./session/store.js";
 export { loadConfig } from "./config.js";
 export { createProvider, ScriptedProvider } from "./provider/factory.js";
 export { ToolRegistry } from "./tools/registry.js";
@@ -20,6 +20,8 @@ export {
   parsePermissionOutcome,
   parseAdditionalDirectories,
   toAcpReplayUpdate,
+  listAcpSessions,
+  parseListCursor,
 } from "./protocol/acp.js";
 export { parseClientCapabilities, createAcpFileIo, hasClientFs } from "./protocol/fs.js";
 export { createAcpTerminal, clientTerminalEnabled } from "./protocol/terminal.js";

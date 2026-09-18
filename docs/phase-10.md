@@ -12,7 +12,7 @@
 4. `session/close` 等价于对该会话 `session/cancel`，再关掉 browser 与会话 MCP，从活动会话表里拿掉
 5. 关掉之后 transcript 仍在，可以再 `session/load` 或 `session/resume`
 
-不做（以后）：SSE 传输、Docker workspace、云端 VM、Playwright 包。
+不做（以后）：SSE 传输、Docker workspace、云端 VM、Playwright 包。会话列表 / 删除见 [期 11](phase-11.md)。
 
 ## 怎么跑
 

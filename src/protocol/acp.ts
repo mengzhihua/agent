@@ -1,6 +1,7 @@
 import path from "node:path";
 import { stdin, stdout, stderr } from "node:process";
 import type { AgentHost } from "../host.js";
+import { sessionTitle, type SessionListRow } from "../session/store.js";
 import type { ApprovalRequest, LoopEvent, Risk, RunMode, SessionEvent } from "../types.js";
 import { encodeMessage, extractMessages, type Framing } from "./framing.js";
 import { createAcpFileIo, hasClientFs, parseClientCapabilities } from "./fs.js";
@@ -22,6 +23,7 @@ interface RpcResponse {
 }
 
 export const ACP_PROTOCOL_VERSION = 1;
+export const SESSION_LIST_PAGE_SIZE = 50;
 
 export const SESSION_MODES = [
   { id: "execute", name: "Execute", description: "Edit files and run tools in the workspace." },
@@ -221,9 +223,9 @@ export async function dispatch(
           loadSession: true,
           promptCapabilities: { image: false, audio: false, embeddedContext: false },
           mcpCapabilities: { http: true, sse: false },
-          sessionCapabilities: { additionalDirectories: {}, resume: {}, close: {} },
+          sessionCapabilities: { additionalDirectories: {}, resume: {}, close: {}, list: {}, delete: {} },
         },
-        agentInfo: { name: "agent", version: "0.11.0" },
+        agentInfo: { name: "agent", version: "0.12.0" },
         authMethods: [],
       };
     case "authenticate":
@@ -254,6 +256,18 @@ export async function dispatch(
       controllers.delete(sessionId);
       await host.closeSession(sessionId);
       sessions.delete(sessionId);
+      return {};
+    }
+    case "session/list":
+      return listAcpSessions(host, req.params);
+    case "session/delete": {
+      const sessionId = String(req.params?.sessionId ?? "");
+      if (sessions.has(sessionId)) {
+        controllers.get(sessionId)?.abort();
+        controllers.delete(sessionId);
+        sessions.delete(sessionId);
+      }
+      await host.deleteSession(sessionId);
       return {};
     }
     case "session/set_mode": {
@@ -312,6 +326,8 @@ export async function dispatch(
         for await (const event of host.prompt(sessionId, prompt, controller.signal)) {
           notify({ sessionId, update: toAcpUpdate(event) });
         }
+        const info = sessionInfoUpdate(host, sessionId);
+        if (info) notify({ sessionId, update: info });
         return { stopReason: controller.signal.aborted ? "cancelled" : "end_turn" };
       } finally {
         host.approver = previousApprover;
@@ -325,6 +341,58 @@ export async function dispatch(
     default:
       throw new Error(`unknown method: ${req.method ?? "?"}`);
   }
+}
+
+export function listAcpSessions(
+  host: AgentHost,
+  params?: Record<string, unknown>,
+  pageSize = SESSION_LIST_PAGE_SIZE,
+): { sessions: Record<string, unknown>[]; nextCursor?: string } {
+  const cwd = listCwdFilter(params?.cwd);
+  const offset = parseListCursor(params?.cursor);
+  const rows = host.store.list().filter((row) => cwd === undefined || path.resolve(row.cwd) === cwd);
+  const page = rows.slice(offset, offset + pageSize);
+  const sessions = page.map((row) => toAcpSessionInfo(row, host.extraRootsFor(row.id)));
+  const nextOffset = offset + page.length;
+  return {
+    sessions,
+    ...(nextOffset < rows.length ? { nextCursor: String(nextOffset) } : {}),
+  };
+}
+
+export function parseListCursor(raw: unknown): number {
+  if (raw === undefined || raw === null || raw === "") return 0;
+  const token = typeof raw === "number" ? String(raw) : raw;
+  if (typeof token !== "string" || !/^\d+$/.test(token)) throw new Error("invalid cursor");
+  return Number(token);
+}
+
+function listCwdFilter(raw: unknown): string | undefined {
+  if (typeof raw !== "string" || !raw.trim()) return undefined;
+  if (!path.isAbsolute(raw)) return "\0";
+  return path.resolve(raw);
+}
+
+export function toAcpSessionInfo(row: SessionListRow, extraRoots: string[] = []): Record<string, unknown> {
+  const info: Record<string, unknown> = {
+    sessionId: row.id,
+    cwd: row.cwd,
+    updatedAt: row.timestamp,
+  };
+  if (row.title) info.title = row.title;
+  if (extraRoots.length > 0) info.additionalDirectories = extraRoots;
+  return info;
+}
+
+function sessionInfoUpdate(host: AgentHost, sessionId: string): Record<string, unknown> | undefined {
+  if (!host.store.exists(sessionId)) return undefined;
+  const events = host.store.read(sessionId);
+  const firstUser = events.find((event) => event.type === "user");
+  const last = events.at(-1);
+  const update: Record<string, unknown> = { sessionUpdate: "session_info_update" };
+  if (firstUser && firstUser.type === "user") update.title = sessionTitle(firstUser.text);
+  if (last?.timestamp) update.updatedAt = last.timestamp;
+  return update.title || update.updatedAt ? update : undefined;
 }
 
 async function restoreSession(
