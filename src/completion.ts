@@ -10,7 +10,7 @@ function bashCompletion(): string {
   return `# bash completion for agent
 _agent() {
   local cur="\${COMP_WORDS[COMP_CWORD]}"
-  local cmds="acp eval doctor update uninstall completion config init --help --version --print --yes --plan --workspace --resume --list --model --provider --sandbox --browser --no-mcp"
+  local cmds="acp eval doctor update uninstall completion config init login logout --help --version --print --yes --plan --workspace --resume --list --model --provider --sandbox --browser --no-mcp"
   COMPREPLY=( $(compgen -W "$cmds" -- "$cur") )
 }
 complete -F _agent agent
@@ -28,6 +28,8 @@ _agent() {
     'update:Re-run the one-click installer'
     'uninstall:Remove shims and checkout'
     'init:Scaffold AGENTS.md and .agent/'
+    'login:Save API keys to ~/.agent/credentials.json'
+    'logout:Remove saved API keys'
     'completion:Print shell completion script'
     'config:Show effective config'
     '--help'
@@ -54,7 +56,7 @@ function powershellCompletion(): string {
   return `Register-ArgumentCompleter -Native -CommandName agent -ScriptBlock {
   param($wordToComplete)
   $cmds = @(
-    'acp','eval','doctor','update','uninstall','completion','config','init',
+    'acp','eval','doctor','update','uninstall','completion','config','init','login','logout',
     '--help','--version','--print','--yes','--plan','--workspace','--resume',
     '--list','--model','--provider','--sandbox','--browser','--no-mcp'
   )

@@ -10,6 +10,8 @@ export { loadAgentsMd } from "./context/agents-md.js";
 export { initWorkspace } from "./init.js";
 export { loadIgnoreMatcher } from "./ignore.js";
 export { inspectGit } from "./git-context.js";
+export { applyLogin, authReport, redactSecrets, resolveSecret } from "./credentials.js";
+export { fetchWithRetry } from "./http.js";
 export { ArtifactStore } from "./artifacts/store.js";
 export { BrowserSession } from "./browser/session.js";
 export { HtmlDriver } from "./browser/html.js";

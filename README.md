@@ -2,7 +2,7 @@
 
 通用 agent 软件：一个极简的模型–工具循环，外面套 harness。
 
-当前进度：**期 19 — 忽略规则、Git 环境与项目初始化**。
+当前进度：**期 20 — 登录凭据、密钥脱敏与请求重试**。
 
 - [行业研究](docs/industry-agent-research.md) — Codex、Claude Code、Grok Build、Devin、Cursor、Gemini CLI、Manus、OpenHands 等怎么做，以及通用 harness 的收敛形态
 - [期 0](docs/phase-0.md)
@@ -25,6 +25,7 @@
 - [期 17](docs/phase-17.md)
 - [期 18](docs/phase-18.md)
 - [期 19](docs/phase-19.md)
+- [期 20](docs/phase-20.md)
 
 ## 研究结论（极简）
 
@@ -69,7 +70,7 @@ npm test
 npm run setup
 ```
 
-密钥（任选）：`OPENAI_API_KEY`、`OPENAI_BASE_URL`、`XAI_API_KEY`、`ANTHROPIC_API_KEY`。
+密钥（任选）：环境变量 `OPENAI_API_KEY`、`OPENAI_BASE_URL`、`XAI_API_KEY`、`ANTHROPIC_API_KEY`，或 `agent login` 写入 `~/.agent/credentials.json`（环境变量优先）。
 
 ## 运行
 
@@ -82,9 +83,11 @@ agent --browser chrome -y -p "Open a page and screenshot"
 agent --list
 agent --resume <id> -p "continue"
 agent acp             # JSON-RPC（NDJSON 或 Content-Length；ask 时向客户端要权限；fs/terminal/MCP 走编辑器）
-agent doctor          # 检查 node / sandbox / 浏览器 / PATH / 配置 / git
+agent doctor          # 检查 node / sandbox / 浏览器 / PATH / 配置 / git / auth
 agent config          # 打印生效配置
 agent init            # 生成 AGENTS.md、.agentignore、.agent/
+agent login           # 保存 API key 到 ~/.agent/credentials.json
+agent logout          # 删除保存的 key
 agent update          # 重跑一键安装
 agent uninstall       # 移除 shim 和 PATH
 agent completion bash # 输出 bash 补全
@@ -113,4 +116,5 @@ MCP 工具以 `mcp__<server>__<tool>` 接在后面。
 
 会话存在 `$AGENT_HOME/sessions`（默认 `~/.agent/sessions`）。
 默认配置 `$AGENT_HOME/config.json`。
+API key `$AGENT_HOME/credentials.json`（`agent login`，权限 0600）。
 交付物存在 `$AGENT_ARTIFACTS` 或 `<workspace>/artifacts`。

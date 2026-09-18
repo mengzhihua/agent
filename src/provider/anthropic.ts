@@ -1,3 +1,5 @@
+import { redactSecrets, resolveSecret } from "../credentials.js";
+import { fetchWithRetry } from "../http.js";
 import type { CompletionEvent, CompletionRequest, ModelMessage, Provider, ToolDefinition } from "../types.js";
 
 function anthropicTools(tools: ToolDefinition[]) {
@@ -49,7 +51,7 @@ export class AnthropicProvider implements Provider {
   constructor(private readonly apiKey: string) {}
 
   async *complete(request: CompletionRequest, signal: AbortSignal): AsyncIterable<CompletionEvent> {
-    const res = await fetch("https://api.anthropic.com/v1/messages", {
+    const res = await fetchWithRetry("https://api.anthropic.com/v1/messages", {
       method: "POST",
       signal,
       headers: {
@@ -67,7 +69,12 @@ export class AnthropicProvider implements Provider {
       }),
     });
     if (!res.ok || !res.body) {
-      const body = await res.text().catch(() => "");
+      const body = redactSecrets(await res.text().catch(() => ""));
+      if (res.status === 401 || res.status === 403) {
+        throw new Error(
+          `Anthropic HTTP ${res.status}: missing or invalid API key. Run: agent login --provider anthropic`,
+        );
+      }
       throw new Error(`Anthropic HTTP ${res.status}: ${body.slice(0, 500)}`);
     }
 
@@ -114,9 +121,9 @@ export class AnthropicProvider implements Provider {
 }
 
 export function createAnthropicProvider(): AnthropicProvider {
-  const apiKey = process.env.ANTHROPIC_API_KEY;
+  const apiKey = resolveSecret("ANTHROPIC_API_KEY");
   if (!apiKey) {
-    throw new Error("ANTHROPIC_API_KEY is required for the anthropic provider");
+    throw new Error("missing API key. Run: agent login --provider anthropic");
   }
   return new AnthropicProvider(apiKey);
 }

@@ -13,7 +13,7 @@
 5. `agent init [dir]` 生成 `AGENTS.md`、`.agentignore`、`.agent/mcp.json`、`.agent/hooks.json`、`.agent/skills/`（已有文件不覆盖）
 6. 同一轮里连续的只读工具（read / grep / glob / skill）并行执行；写、shell、`ask_user`、`update_plan`、`task` 仍串行
 
-不做：npm 公有源、单文件原生二进制、Docker workspace、云端 VM、Playwright、SSE、图片 prompt、布尔 ACP config、累计 cost。
+不做：OAuth、密钥进系统钥匙串、npm 公有源、单文件原生二进制、Docker workspace、云端 VM、Playwright、SSE、图片 prompt、布尔 ACP config、累计 cost。登录凭据见 [期 20](phase-20.md)。
 
 ## 怎么跑
 
