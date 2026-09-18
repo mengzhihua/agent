@@ -176,6 +176,18 @@ describe("agent loop", () => {
     expect(events.some((event) => event.type === "aborted")).toBe(true);
   });
 
+  it("stops after max tool iterations", async () => {
+    const workspace = await fsp.mkdtemp(path.join(os.tmpdir(), "agent-max-"));
+    const store = new SessionStore(fs.mkdtempSync(path.join(os.tmpdir(), "agent-max-sess-")));
+    const provider = new ScriptedProvider([
+      { toolCalls: [{ id: "c1", name: "glob", arguments: { pattern: "*" } }] },
+      { toolCalls: [{ id: "c2", name: "glob", arguments: { pattern: "*" } }] },
+      { toolCalls: [{ id: "c3", name: "glob", arguments: { pattern: "*" } }] },
+    ]);
+    const { events } = await collect(store, "m1", "loop", provider, workspace, { maxToolIterations: 2 });
+    expect(events.some((event) => event.type === "error")).toBe(true);
+  });
+
   it("runs consecutive read tools from one model turn", async () => {
     const workspace = await fsp.mkdtemp(path.join(os.tmpdir(), "agent-par-"));
     await fsp.writeFile(path.join(workspace, "a.txt"), "alpha\n");
