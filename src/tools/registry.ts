@@ -1,15 +1,16 @@
 import { SkillIndex } from "../context/skills.js";
-import type { AgentConfig, ToolDefinition } from "../types.js";
+import type { AgentConfig, ToolDefinition, ToolLocation } from "../types.js";
+import { resolveInWorkspace } from "../workspace.js";
 import { applyPatchDefinition, applyPatchTool } from "./apply_patch.js";
+import { artifactTool } from "./artifact.js";
+import { askUserTool } from "./ask_user.js";
+import { browserTool } from "./browser.js";
 import { skillTool, taskTool, updatePlanTool, type TaskArgs } from "./extra.js";
 import { globDefinition, globTool } from "./glob.js";
 import { grepDefinition, grepTool } from "./grep.js";
 import { readDefinition, readFileTool } from "./read.js";
 import { shellDefinition, shellTool } from "./shell.js";
-import { asOptionalNumber, asString, type ToolContext, type ToolHandler } from "./types.js";
-import { artifactTool } from "./artifact.js";
-import { askUserTool } from "./ask_user.js";
-import { browserTool } from "./browser.js";
+import { asOptionalNumber, asString, type ToolContext, type ToolExecuteResult, type ToolHandler } from "./types.js";
 import { webFetchHandler } from "./web_fetch.js";
 import { webSearchDefinition, webSearchTool } from "./web_search.js";
 
@@ -34,15 +35,21 @@ export function createBuiltinTools(config: AgentConfig, options: RegistryOptions
   const handlers: ToolHandler[] = [
     {
       definition: readDefinition(config),
-      execute: async (args, ctx) =>
-        readFileTool(
+      execute: async (args, ctx) => {
+        const rel = asString(args, "path");
+        const offset = asOptionalNumber(args, "offset");
+        const content = await readFileTool(
           workspaceOf(ctx),
-          asString(args, "path"),
-          asOptionalNumber(args, "offset"),
+          rel,
+          offset,
           asOptionalNumber(args, "limit"),
           ctx.runtime?.files,
           extraRootsOf(ctx),
-        ),
+        );
+        const loc: ToolLocation = { path: resolveInWorkspace(workspaceOf(ctx), rel, extraRootsOf(ctx)) };
+        if (offset !== undefined) loc.line = offset;
+        return { content, locations: [loc] } satisfies ToolExecuteResult;
+      },
     },
     {
       definition: grepDefinition(config),
@@ -64,8 +71,20 @@ export function createBuiltinTools(config: AgentConfig, options: RegistryOptions
     },
     {
       definition: applyPatchDefinition(config),
-      execute: async (args, ctx) =>
-        applyPatchTool(workspaceOf(ctx), asString(args, "path"), args, ctx.runtime?.files, extraRootsOf(ctx)),
+      execute: async (args, ctx) => {
+        const result = await applyPatchTool(
+          workspaceOf(ctx),
+          asString(args, "path"),
+          args,
+          ctx.runtime?.files,
+          extraRootsOf(ctx),
+        );
+        return {
+          content: result.summary,
+          locations: [{ path: result.absPath }],
+          diff: { path: result.absPath, oldText: result.oldText, newText: result.newText },
+        } satisfies ToolExecuteResult;
+      },
     },
     {
       definition: shellDefinition(config),

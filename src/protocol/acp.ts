@@ -4,7 +4,8 @@ import type { AgentHost } from "../host.js";
 import { assembleMessages } from "../loop/assemble.js";
 import { autoApprover } from "../permissions/policy.js";
 import { sessionTitle, type SessionListRow } from "../session/store.js";
-import type { AgentConfig, ApprovalMode, ApprovalRequest, LoopEvent, Risk, RunMode, SessionEvent } from "../types.js";
+import type { AgentConfig, ApprovalMode, ApprovalRequest, LoopEvent, Risk, RunMode, SessionEvent, ToolDiff, ToolLocation } from "../types.js";
+import { locationsFromToolArgs } from "../tools/types.js";
 import { estimateTokens } from "../workspace.js";
 import { encodeMessage, extractMessages, type Framing } from "./framing.js";
 import { createAcpFileIo, hasClientFs, parseClientCapabilities } from "./fs.js";
@@ -335,7 +336,7 @@ export async function dispatch(
           mcpCapabilities: { http: true, sse: false },
           sessionCapabilities: { additionalDirectories: {}, resume: {}, close: {}, list: {}, delete: {} },
         },
-        agentInfo: { name: "agent", version: "0.15.0" },
+        agentInfo: { name: "agent", version: "0.16.0" },
         authMethods: [],
       };
     case "authenticate":
@@ -644,6 +645,58 @@ function toolKind(name: string): string {
   return "other";
 }
 
+function acpToolCallStart(
+  callId: string,
+  name: string,
+  args: unknown,
+  locations?: ToolLocation[],
+): Record<string, unknown> {
+  const update: Record<string, unknown> = {
+    sessionUpdate: "tool_call",
+    toolCallId: callId,
+    title: name,
+    name,
+    kind: toolKind(name),
+    status: "in_progress",
+    rawInput: args,
+  };
+  const locs = locations ?? locationsFromToolArgs(name, args);
+  if (locs?.length) update.locations = locs;
+  return update;
+}
+
+function acpToolCallEnd(
+  callId: string,
+  output: string,
+  isError?: boolean,
+  locations?: ToolLocation[],
+  diff?: ToolDiff,
+): Record<string, unknown> {
+  const content: Record<string, unknown>[] = [
+    {
+      type: "content",
+      content: { type: "text", text: output },
+    },
+  ];
+  if (diff) {
+    content.push({
+      type: "diff",
+      path: diff.path,
+      oldText: diff.oldText,
+      newText: diff.newText,
+    });
+  }
+  const update: Record<string, unknown> = {
+    sessionUpdate: "tool_call_update",
+    toolCallId: callId,
+    status: isError ? "failed" : "completed",
+    rawOutput: output,
+    content,
+  };
+  if (locations?.length) update.locations = locations;
+  return update;
+}
+
 export function promptText(prompt: unknown): string {
   if (typeof prompt === "string") return prompt;
   if (Array.isArray(prompt)) {
@@ -675,27 +728,9 @@ export function toAcpReplayUpdate(event: SessionEvent): Record<string, unknown> 
         content: { type: "text", text: event.text },
       };
     case "tool_call":
-      return {
-        sessionUpdate: "tool_call",
-        toolCallId: event.callId,
-        title: event.name,
-        kind: toolKind(event.name),
-        status: "in_progress",
-        rawInput: event.arguments,
-      };
+      return acpToolCallStart(event.callId, event.name, event.arguments);
     case "tool_result":
-      return {
-        sessionUpdate: "tool_call_update",
-        toolCallId: event.callId,
-        status: event.isError ? "failed" : "completed",
-        rawOutput: event.content,
-        content: [
-          {
-            type: "content",
-            content: { type: "text", text: event.content },
-          },
-        ],
-      };
+      return acpToolCallEnd(event.callId, event.content, event.isError);
     case "plan":
       return {
         sessionUpdate: "plan",
@@ -713,26 +748,9 @@ export function toAcpUpdate(event: LoopEvent): Record<string, unknown> {
     case "text-delta":
       return { sessionUpdate: "agent_message_chunk", content: { type: "text", text: event.text } };
     case "tool-start":
-      return {
-        sessionUpdate: "tool_call",
-        toolCallId: event.callId,
-        title: event.name,
-        kind: toolKind(event.name),
-        status: "in_progress",
-      };
+      return acpToolCallStart(event.callId, event.name, event.arguments, event.locations);
     case "tool-end":
-      return {
-        sessionUpdate: "tool_call_update",
-        toolCallId: event.callId,
-        status: event.isError ? "failed" : "completed",
-        rawOutput: event.content,
-        content: [
-          {
-            type: "content",
-            content: { type: "text", text: event.content },
-          },
-        ],
-      };
+      return acpToolCallEnd(event.callId, event.content, event.isError, event.locations, event.diff);
     case "plan":
       return {
         sessionUpdate: "plan",

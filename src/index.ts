@@ -20,6 +20,7 @@ export {
   parsePermissionOutcome,
   parseAdditionalDirectories,
   toAcpReplayUpdate,
+  toAcpUpdate,
   listAcpSessions,
   parseListCursor,
   parseSlashCommand,

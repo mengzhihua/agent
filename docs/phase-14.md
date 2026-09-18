@@ -12,7 +12,7 @@
 4. 改 `model` 时窗口可能变，再发一次
 5. 提供商中途的 usage 事件不转成 ACP（避免没有 `size` 的半截通知）
 
-不做（以后）：SSE 传输、Docker workspace、云端 VM、Playwright 包、累计 cost、布尔 config。
+工具调用 diff/locations 见 [期 15](phase-15.md)。不做（以后）：SSE 传输、Docker workspace、云端 VM、Playwright 包、累计 cost、布尔 config。
 
 ## 怎么跑
 

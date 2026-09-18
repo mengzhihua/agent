@@ -83,6 +83,10 @@ describe("agent loop", () => {
     const { events } = await collect(store, "s1", "Fix the failing test.", provider, workspace);
     expect(events.some((event) => event.type === "turn-end")).toBe(true);
     expect(await fsp.readFile(path.join(workspace, "add.mjs"), "utf8")).toContain("return a + b;");
+    const patch = events.find((event) => event.type === "tool-end" && event.name === "apply_patch");
+    expect(patch?.type === "tool-end" && patch.diff?.oldText).toContain("return a - b;");
+    expect(patch?.type === "tool-end" && patch.diff?.newText).toContain("return a + b;");
+    expect(patch?.type === "tool-end" && patch.locations?.[0]?.path).toBe(path.join(workspace, "add.mjs"));
     const testOut = events.find((event) => event.type === "tool-end" && event.name === "shell");
     expect(testOut?.type === "tool-end" && testOut.content).toMatch(/ok/);
     expect(provider.remaining()).toBe(0);

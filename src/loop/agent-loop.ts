@@ -7,8 +7,8 @@ import { createSessionRuntime, type SessionRuntime } from "../runtime.js";
 import type { SessionStore } from "../session/store.js";
 import { parseSteps } from "../tools/extra.js";
 import type { ToolRegistry } from "../tools/registry.js";
-import { runTool } from "../tools/types.js";
-import type { AgentConfig, Approver, LoopEvent, Provider, ToolCall } from "../types.js";
+import { runTool, startLocationsForCall } from "../tools/types.js";
+import type { AgentConfig, Approver, LoopEvent, Provider, ToolCall, ToolDiff, ToolLocation } from "../types.js";
 import { assembleMessages } from "./assemble.js";
 import { shouldCompact, summarizeTranscript } from "./compact.js";
 
@@ -93,7 +93,13 @@ export async function* runTurn(options: RunTurnOptions): AsyncGenerator<LoopEven
       }
 
       for (const call of toolCalls) {
-        yield { type: "tool-start", callId: call.id, name: call.name, arguments: call.arguments };
+        yield {
+          type: "tool-start",
+          callId: call.id,
+          name: call.name,
+          arguments: call.arguments,
+          locations: startLocationsForCall(call, runtime.workspace, runtime.extraRoots),
+        };
         if (call.name === "task") {
           const args = (call.arguments ?? {}) as Record<string, unknown>;
           yield {
@@ -180,7 +186,10 @@ export async function* runTurn(options: RunTurnOptions): AsyncGenerator<LoopEven
           };
         }
 
-        yield* finishTool(store, sessionId, call, content, executed.isError);
+        yield* finishTool(store, sessionId, call, content, executed.isError, {
+          locations: executed.locations,
+          diff: executed.diff,
+        });
       }
     }
 
@@ -201,6 +210,7 @@ async function* finishTool(
   call: ToolCall,
   content: string,
   isError?: boolean,
+  extra?: { locations?: ToolLocation[]; diff?: ToolDiff },
 ): AsyncGenerator<LoopEvent> {
   store.append(sessionId, {
     type: "tool_result",
@@ -211,7 +221,15 @@ async function* finishTool(
     content,
     isError,
   });
-  yield { type: "tool-end", callId: call.id, name: call.name, content, isError };
+  yield {
+    type: "tool-end",
+    callId: call.id,
+    name: call.name,
+    content,
+    isError,
+    locations: extra?.locations,
+    diff: extra?.diff,
+  };
 }
 
 async function* maybeCompact(options: RunTurnOptions): AsyncGenerator<LoopEvent> {
