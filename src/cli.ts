@@ -14,7 +14,17 @@ import { runAcpStdio } from "./protocol/acp.js";
 import type { AskUserFn } from "./runtime.js";
 import { applyLogin, applyLogout, parseLoginProvider, redactSecrets } from "./credentials.js";
 import { formatInitResult, initWorkspace } from "./init.js";
-import { encodeJsonResult, encodeStreamLine, formatSessionList, parseOutputFormat, collectJsonResult, type OutputFormat } from "./output.js";
+import {
+  collectJsonResult,
+  encodeJsonResult,
+  encodeStreamLine,
+  formatEvalResults,
+  formatSessionDelete,
+  formatSessionList,
+  formatSessionShow,
+  parseOutputFormat,
+  type OutputFormat,
+} from "./output.js";
 import { runSelfUpdate, runUninstall } from "./self_update.js";
 import { SessionStore } from "./session/store.js";
 import type { Approver, BrowserMode, LoopEvent, ProviderName, SandboxMode } from "./types.js";
@@ -24,6 +34,7 @@ function usage(): string {
   return `Usage: agent [options] [prompt]
        agent acp
        agent eval <file-or-dir>
+       agent session list|show|delete|export [id]
        agent doctor
        agent config
        agent init [dir]
@@ -40,7 +51,7 @@ function usage(): string {
   --plan                 Start in plan mode (read-only + update_plan)
   -w, --workspace <dir>  Workspace root (default: cwd)
   --resume <id>          Continue a session
-  --list                 List sessions
+  --list                 List sessions (alias: agent session list)
   --model <name>         Model id
   --provider <name>      openai | anthropic
   --session-dir <dir>    Transcript directory
@@ -130,19 +141,12 @@ async function main(): Promise<void> {
   }
 
   if (process.argv[2] === "eval") {
-    const target = process.argv[3];
-    if (!target) throw new Error("usage: agent eval <file-or-dir>");
-    const results = await runEvalTarget(target);
-    let failed = 0;
-    for (const result of results) {
-      if (result.ok) {
-        output.write(`PASS  ${result.name}\n`);
-      } else {
-        failed += 1;
-        stderr.write(`FAIL  ${result.name}: ${result.error}\n`);
-      }
-    }
-    if (failed) process.exitCode = 1;
+    await runEvalCommand(process.argv.slice(3));
+    return;
+  }
+
+  if (process.argv[2] === "session") {
+    runSessionCommand(process.argv.slice(3));
     return;
   }
 
@@ -254,6 +258,59 @@ async function runLoginCommand(argv: string[]): Promise<void> {
   }
   const file = applyLogin({ provider, apiKey: key, baseUrl: values["base-url"] });
   output.write(`Saved ${provider} credentials to ${file}\n`);
+}
+
+async function runEvalCommand(argv: string[]): Promise<void> {
+  const { values, positionals } = parseArgs({
+    args: argv,
+    allowPositionals: true,
+    options: {
+      "output-format": { type: "string" },
+    },
+  });
+  const target = positionals[0];
+  if (!target) throw new Error("usage: agent eval <file-or-dir>");
+  const format = parseOutputFormat(values["output-format"]);
+  const results = await runEvalTarget(target);
+  const rendered = formatEvalResults(results, format);
+  if (rendered.stdout) output.write(`${rendered.stdout}\n`);
+  if (rendered.stderr) stderr.write(`${rendered.stderr}\n`);
+  if (results.some((result) => !result.ok)) process.exitCode = 1;
+}
+
+function runSessionCommand(argv: string[]): void {
+  const { values, positionals } = parseArgs({
+    args: argv,
+    allowPositionals: true,
+    options: {
+      "output-format": { type: "string" },
+      "session-dir": { type: "string" },
+    },
+  });
+  const action = positionals[0] ?? "list";
+  const sessionId = positionals[1];
+  const config = loadConfig({ sessionDir: values["session-dir"] });
+  const store = new SessionStore(config.sessionDir);
+  const format = parseOutputFormat(values["output-format"]);
+  const machine = format === "text" ? "text" : "json";
+
+  if (action === "list") {
+    output.write(`${formatSessionList(store.list(), machine)}\n`);
+    return;
+  }
+  if (action === "show" || action === "export") {
+    if (!sessionId) throw new Error(`usage: agent session ${action} <id>`);
+    const shown = formatSessionShow(store.inspect(sessionId), action === "export" ? "json" : machine);
+    output.write(`${shown}\n`);
+    return;
+  }
+  if (action === "delete") {
+    if (!sessionId) throw new Error("usage: agent session delete <id>");
+    store.delete(sessionId);
+    output.write(`${formatSessionDelete(sessionId, machine)}\n`);
+    return;
+  }
+  throw new Error("usage: agent session list|show|delete|export [id]");
 }
 
 async function interactive(host: AgentHost, sessionId: string): Promise<void> {

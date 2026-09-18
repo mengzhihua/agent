@@ -43,9 +43,59 @@ describe("one-click setup", () => {
     );
     expect(listed.status, listed.stderr).toBe(0);
     expect(JSON.parse(listed.stdout)).toEqual([]);
+    const sessionDir = fs.mkdtempSync(path.join(os.tmpdir(), "agent-session-cli-"));
+    fs.writeFileSync(
+      path.join(sessionDir, "s1.jsonl"),
+      `${JSON.stringify({
+        type: "session_meta",
+        id: "s1",
+        timestamp: "2026-09-18T00:00:00.000Z",
+        cwd: "/tmp",
+        model: "test",
+        provider: "scripted",
+      })}\n${JSON.stringify({ type: "user", id: "u1", timestamp: "2026-09-18T00:00:01.000Z", text: "hello" })}\n`,
+      "utf8",
+    );
+    const sessionList = spawnSync(
+      process.execPath,
+      [path.join(root, "dist/cli.js"), "session", "list", "--output-format", "json", "--session-dir", sessionDir],
+      { encoding: "utf8" },
+    );
+    expect(sessionList.status, sessionList.stderr).toBe(0);
+    expect(JSON.parse(sessionList.stdout)).toMatchObject([{ id: "s1", title: "hello" }]);
+    const shown = spawnSync(
+      process.execPath,
+      [path.join(root, "dist/cli.js"), "session", "show", "s1", "--session-dir", sessionDir],
+      { encoding: "utf8" },
+    );
+    expect(shown.status, shown.stderr).toBe(0);
+    expect(shown.stdout).toContain("user  2026-09-18T00:00:01.000Z");
+    const exported = spawnSync(
+      process.execPath,
+      [path.join(root, "dist/cli.js"), "session", "export", "s1", "--session-dir", sessionDir],
+      { encoding: "utf8" },
+    );
+    expect(exported.status, exported.stderr).toBe(0);
+    expect(JSON.parse(exported.stdout)).toMatchObject({ id: "s1", title: "hello" });
+    const deleted = spawnSync(
+      process.execPath,
+      [path.join(root, "dist/cli.js"), "session", "delete", "s1", "--output-format", "json", "--session-dir", sessionDir],
+      { encoding: "utf8" },
+    );
+    expect(deleted.status, deleted.stderr).toBe(0);
+    expect(JSON.parse(deleted.stdout)).toEqual({ id: "s1", deleted: true });
+    expect(fs.existsSync(path.join(sessionDir, "s1.jsonl"))).toBe(false);
+    const evalJson = spawnSync(
+      process.execPath,
+      [path.join(root, "dist/cli.js"), "eval", path.join(root, "test/evals"), "--output-format", "json"],
+      { encoding: "utf8" },
+    );
+    expect(evalJson.status, evalJson.stderr).toBe(0);
+    expect(JSON.parse(evalJson.stdout)).toMatchObject({ type: "eval", failed: 0 });
     const help = spawnSync(process.execPath, [path.join(root, "dist/cli.js"), "--help"], { encoding: "utf8" });
     expect(help.stdout).toContain("--output-format");
     expect(help.stdout).toContain("--quiet");
+    expect(help.stdout).toContain("agent session list");
   });
 
   it("ships unix and windows installers", () => {
