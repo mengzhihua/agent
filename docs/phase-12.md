@@ -12,7 +12,7 @@
 4. `/yes`、`/ask` 改 `approvalMode`；auto 时不再向客户端要权限
 5. 未登记的 `/foo` 当普通用户消息
 
-不做（以后）：SSE 传输、Docker workspace、云端 VM、Playwright 包。Session config options / usage_update 以后再做。
+不做（以后）：SSE 传输、Docker workspace、云端 VM、Playwright 包。Session config options 见 [期 13](phase-13.md)。
 
 ## 怎么跑
 
