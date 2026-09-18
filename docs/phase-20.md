@@ -13,7 +13,7 @@
 5. OpenAI / Anthropic 请求对 429、500、502、503、529 最多再试 3 次；401/403 提示去 login
 6. `agent doctor` 显示 `auth openai env|file|missing`（不打印 key）
 
-不做：OAuth / 浏览器登录、密钥进系统钥匙串、npm 公有源、单文件原生二进制、Docker workspace、云端 VM、Playwright、SSE、图片 prompt、布尔 ACP config、累计 cost。
+不做：OAuth、密钥进系统钥匙串、npm 公有源、单文件原生二进制、Docker workspace、云端 VM、Playwright、SSE、图片 prompt、布尔 ACP config、累计 cost。CLI JSON 输出见 [期 21](phase-21.md)。
 
 ## 怎么跑
 
