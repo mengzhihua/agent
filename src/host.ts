@@ -74,6 +74,16 @@ export class AgentHost {
     this.config = { ...this.config, runMode };
   }
 
+  setApprovalMode(approvalMode: AgentConfig["approvalMode"]): void {
+    this.config = { ...this.config, approvalMode };
+  }
+
+  setModel(model: string): void {
+    const next = model.trim();
+    if (!next) throw new Error("invalid model");
+    this.config = { ...this.config, model: next };
+  }
+
   setWorkspace(workspace: string): void {
     this.config = { ...this.config, workspace: path.resolve(workspace) };
   }
@@ -109,6 +119,12 @@ export class AgentHost {
     return id;
   }
 
+  setSessionRoots(sessionId: string, extraRoots: string[]): void {
+    const runtime = this.runtimeFor(sessionId);
+    runtime.extraRoots = extraRoots;
+    runtime.files = diskFileIo(runtime.workspace, extraRoots);
+  }
+
   resume(sessionId: string, cwd?: string): void {
     if (!this.store.exists(sessionId)) {
       throw new Error(`session not found: ${sessionId}`);
@@ -116,7 +132,24 @@ export class AgentHost {
     if (cwd) this.setWorkspace(cwd);
     const runtime = this.runtimeFor(sessionId);
     runtime.workspace = this.config.workspace;
-    runtime.files = diskFileIo(this.config.workspace);
+    runtime.files = diskFileIo(runtime.workspace, runtime.extraRoots);
+  }
+
+  async closeSession(sessionId: string): Promise<void> {
+    const runtime = this.runtimes.get(sessionId);
+    if (!runtime) return;
+    this.runtimes.delete(sessionId);
+    await runtime.browser.close();
+    await runtime.mcp?.close();
+  }
+
+  extraRootsFor(sessionId: string): string[] {
+    return this.runtimes.get(sessionId)?.extraRoots ?? [];
+  }
+
+  async deleteSession(sessionId: string): Promise<void> {
+    await this.closeSession(sessionId);
+    this.store.delete(sessionId);
   }
 
   async *prompt(sessionId: string, userText: string, signal: AbortSignal): AsyncGenerator<LoopEvent> {

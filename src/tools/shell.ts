@@ -7,6 +7,7 @@ import { resolveInWorkspace, truncate } from "../workspace.js";
 export interface ShellRunOptions {
   terminal?: AcpTerminal;
   onTerminal?: (terminalId: string) => void;
+  extraRoots?: string[];
 }
 
 export async function shellTool(
@@ -17,12 +18,13 @@ export async function shellTool(
   signal: AbortSignal,
   extras: ShellRunOptions = {},
 ): Promise<string> {
-  const cwd = relCwd ? resolveInWorkspace(config.workspace, relCwd) : config.workspace;
+  const extraRoots = extras.extraRoots ?? [];
+  const cwd = relCwd ? resolveInWorkspace(config.workspace, relCwd, extraRoots) : config.workspace;
   const timeout = timeoutMs ?? config.shellTimeoutMs;
   if (extras.terminal) {
     return runViaClientTerminal(config, command, cwd, timeout, signal, extras.terminal, extras.onTerminal);
   }
-  return runLocal(config, command, cwd, timeout, signal);
+  return runLocal(config, command, cwd, timeout, signal, extraRoots);
 }
 
 async function runLocal(
@@ -31,8 +33,9 @@ async function runLocal(
   cwd: string,
   timeout: number,
   signal: AbortSignal,
+  extraRoots: string[] = [],
 ): Promise<string> {
-  const plan = planShell(config, command, cwd);
+  const plan = planShell(config, command, cwd, extraRoots);
   const child = spawn(plan.file, plan.args, {
     cwd: plan.cwd,
     shell: plan.shell,

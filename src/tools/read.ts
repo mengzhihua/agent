@@ -7,13 +7,14 @@ export async function readFileTool(
   offset?: number,
   limit?: number,
   io: FileIo = diskFileIo(workspace),
+  extraRoots: string[] = [],
 ): Promise<string> {
   const { content, existed } = await io.readText(relPath);
   if (!existed) throw new Error(`not a file: ${relPath}`);
   if (Buffer.byteLength(content, "utf8") > MAX_TEXT_FILE_BYTES) {
     throw new Error(`file too large to read (${Buffer.byteLength(content, "utf8")} bytes): ${relPath}`);
   }
-  return formatNumbered(workspace, relPath, content, offset, limit);
+  return formatNumbered(workspace, relPath, content, offset, limit, extraRoots);
 }
 
 export function readDefinition(config: AgentConfig) {

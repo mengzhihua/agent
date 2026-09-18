@@ -1,5 +1,5 @@
 export { runTurn } from "./loop/agent-loop.js";
-export { SessionStore } from "./session/store.js";
+export { SessionStore, sessionTitle } from "./session/store.js";
 export { loadConfig } from "./config.js";
 export { createProvider, ScriptedProvider } from "./provider/factory.js";
 export { ToolRegistry } from "./tools/registry.js";
@@ -14,7 +14,20 @@ export { ChromeDriver, createBrowserDriver, findChrome } from "./browser/chrome.
 export { createSessionRuntime } from "./runtime.js";
 export { detectSandboxBackend, planShell } from "./sandbox/index.js";
 export { runEvalFile, runEvalTarget } from "./eval/run.js";
-export { dispatch, bindAcpApprover, parsePermissionOutcome } from "./protocol/acp.js";
+export {
+  dispatch,
+  bindAcpApprover,
+  parsePermissionOutcome,
+  parseAdditionalDirectories,
+  toAcpReplayUpdate,
+  listAcpSessions,
+  parseListCursor,
+  parseSlashCommand,
+  AVAILABLE_COMMANDS,
+  acpConfigOptions,
+  contextWindowSize,
+  acpUsageUpdate,
+} from "./protocol/acp.js";
 export { parseClientCapabilities, createAcpFileIo, hasClientFs } from "./protocol/fs.js";
 export { createAcpTerminal, clientTerminalEnabled } from "./protocol/terminal.js";
 export { parseAcpMcpServers } from "./protocol/mcp.js";

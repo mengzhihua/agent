@@ -32,8 +32,9 @@ export async function applyPatchTool(
   relPath: string,
   args: Record<string, unknown>,
   io: FileIo = diskFileIo(workspace),
+  extraRoots: string[] = [],
 ): Promise<string> {
-  const abs = resolveInWorkspace(workspace, relPath);
+  const abs = resolveInWorkspace(workspace, relPath, extraRoots);
   const edits = collectEdits(args);
   const { content, existed } = await io.readText(relPath);
 
@@ -43,7 +44,7 @@ export async function applyPatchTool(
     }
     const created = edits.map((edit) => edit.new_string).join("");
     await io.writeText(relPath, created);
-    return `created ${toWorkspacePath(workspace, abs)} (${created.split("\n").length} lines)`;
+    return `created ${toWorkspacePath(workspace, abs, extraRoots)} (${created.split("\n").length} lines)`;
   }
 
   let next = content;
@@ -61,7 +62,7 @@ export async function applyPatchTool(
     next = next.replace(edit.old_string, edit.new_string);
   }
   await io.writeText(relPath, next);
-  return `updated ${toWorkspacePath(workspace, abs)}`;
+  return `updated ${toWorkspacePath(workspace, abs, extraRoots)}`;
 }
 
 export function applyPatchDefinition(config: AgentConfig) {

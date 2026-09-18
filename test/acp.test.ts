@@ -10,7 +10,14 @@ import {
   ACP_PROTOCOL_VERSION,
   bindAcpApprover,
   dispatch,
+  parseAdditionalDirectories,
   parsePermissionOutcome,
+  listAcpSessions,
+  parseListCursor,
+  parseSlashCommand,
+  toAcpReplayUpdate,
+  contextWindowSize,
+  acpUsageUpdate,
 } from "../src/protocol/acp.js";
 import { parseAcpMcpServers } from "../src/protocol/mcp.js";
 import { parseClientCapabilities } from "../src/protocol/fs.js";
@@ -63,7 +70,11 @@ describe("ACP-shaped protocol", () => {
     const init = await dispatch(host, sessions, controllers, { jsonrpc: "2.0", id: 1, method: "initialize" }, () => undefined);
     expect(init).toMatchObject({
       protocolVersion: ACP_PROTOCOL_VERSION,
-      agentCapabilities: { loadSession: true },
+      agentCapabilities: {
+        loadSession: true,
+        sessionCapabilities: { additionalDirectories: {}, resume: {}, close: {}, list: {}, delete: {} },
+      },
+      agentInfo: { name: "agent", version: "0.15.0" },
     });
 
     const created = (await dispatch(
@@ -72,8 +83,10 @@ describe("ACP-shaped protocol", () => {
       controllers,
       { jsonrpc: "2.0", id: 2, method: "session/new" },
       () => undefined,
-    )) as { sessionId: string; modes: { currentModeId: string } };
+    )) as { sessionId: string; modes: { currentModeId: string }; configOptions: Array<{ id: string; currentValue: unknown }> };
     expect(created.modes.currentModeId).toBe("execute");
+    expect(created.configOptions.map((option) => option.id)).toEqual(["mode", "model", "approval"]);
+    expect(created.configOptions.find((option) => option.id === "mode")?.currentValue).toBe("execute");
 
     const result = await dispatch(
       host,
@@ -583,6 +596,750 @@ describe("ACP session MCP", () => {
     );
     expect(result).toEqual({ stopReason: "end_turn" });
     expect(JSON.stringify(notes)).toContain("echo:hi");
+    await host.close();
+  });
+});
+
+describe("ACP additionalDirectories", () => {
+  it("keeps only unique absolute paths", () => {
+    expect(parseAdditionalDirectories(["/tmp/a", "/tmp/a/", "relative", 1, "/tmp/b"])).toEqual([
+      path.resolve("/tmp/a"),
+      path.resolve("/tmp/b"),
+    ]);
+  });
+
+  it("lets read touch a file in an extra root", async () => {
+    const extra = fs.mkdtempSync(path.join(os.tmpdir(), "agent-acp-extra-"));
+    fs.writeFileSync(path.join(extra, "lib.ts"), "export const n = 1;\n");
+    const provider = new ScriptedProvider([
+      { toolCalls: [{ id: "c1", name: "read", arguments: { path: path.join(extra, "lib.ts") } }] },
+      { text: "saw lib" },
+    ]);
+    const host = await hostWith(provider);
+    const sessions = new Set<string>();
+    const controllers = new Map<string, AbortController>();
+    const created = (await dispatch(
+      host,
+      sessions,
+      controllers,
+      {
+        jsonrpc: "2.0",
+        id: 1,
+        method: "session/new",
+        params: { additionalDirectories: [extra] },
+      },
+      () => undefined,
+    )) as { sessionId: string };
+
+    const notes: unknown[] = [];
+    await dispatch(
+      host,
+      sessions,
+      controllers,
+      {
+        jsonrpc: "2.0",
+        id: 2,
+        method: "session/prompt",
+        params: { sessionId: created.sessionId, prompt: "read lib" },
+      },
+      (note) => notes.push(note),
+    );
+    expect(JSON.stringify(notes)).toContain("export const n = 1");
+    await host.close();
+  });
+});
+
+describe("ACP session load / resume / close", () => {
+  it("maps transcript events for replay", () => {
+    expect(
+      toAcpReplayUpdate({ type: "session_meta", id: "s1", timestamp: "t", cwd: "/", model: "m", provider: "scripted" }),
+    ).toBeUndefined();
+    expect(toAcpReplayUpdate({ type: "compact", id: "c1", timestamp: "t", summary: "old" })).toBeUndefined();
+    expect(toAcpReplayUpdate({ type: "user", id: "u1", timestamp: "t", text: "hi" })).toEqual({
+      sessionUpdate: "user_message_chunk",
+      messageId: "u1",
+      content: { type: "text", text: "hi" },
+    });
+    expect(toAcpReplayUpdate({ type: "assistant", id: "a1", timestamp: "t", text: "hello" })).toMatchObject({
+      sessionUpdate: "agent_message_chunk",
+      messageId: "a1",
+    });
+    expect(
+      toAcpReplayUpdate({
+        type: "tool_call",
+        id: "t1",
+        timestamp: "t",
+        callId: "c1",
+        name: "read",
+        arguments: { path: "a.ts" },
+      }),
+    ).toMatchObject({ sessionUpdate: "tool_call", toolCallId: "c1", kind: "read", status: "in_progress" });
+    expect(
+      toAcpReplayUpdate({
+        type: "tool_result",
+        id: "t2",
+        timestamp: "t",
+        callId: "c1",
+        name: "read",
+        content: "ok",
+      }),
+    ).toMatchObject({ sessionUpdate: "tool_call_update", toolCallId: "c1", status: "completed" });
+  });
+
+  it("replays history on session/load and returns null", async () => {
+    const provider = new ScriptedProvider([
+      { toolCalls: [{ id: "c1", name: "read", arguments: { path: "note.txt" } }] },
+      { text: "saw note" },
+      { text: "still here" },
+    ]);
+    const host = await hostWith(provider);
+    fs.writeFileSync(path.join(host.config.workspace, "note.txt"), "hello note\n");
+    const sessions = new Set<string>();
+    const controllers = new Map<string, AbortController>();
+    const created = (await dispatch(
+      host,
+      sessions,
+      controllers,
+      { jsonrpc: "2.0", id: 1, method: "session/new" },
+      () => undefined,
+    )) as { sessionId: string };
+
+    await dispatch(
+      host,
+      sessions,
+      controllers,
+      {
+        jsonrpc: "2.0",
+        id: 2,
+        method: "session/prompt",
+        params: { sessionId: created.sessionId, prompt: "read note" },
+      },
+      () => undefined,
+    );
+
+    const notes: unknown[] = [];
+    const loaded = await dispatch(
+      host,
+      sessions,
+      controllers,
+      {
+        jsonrpc: "2.0",
+        id: 3,
+        method: "session/load",
+        params: { sessionId: created.sessionId },
+      },
+      (note) => notes.push(note),
+    );
+    expect(loaded).toBeNull();
+    const dumped = JSON.stringify(notes);
+    expect(dumped).toContain("user_message_chunk");
+    expect(dumped).toContain("read note");
+    expect(dumped).toContain("agent_message_chunk");
+    expect(dumped).toContain("saw note");
+    expect(dumped).toContain("tool_call");
+    expect(dumped).toContain("hello note");
+    expect(dumped).not.toContain("still here");
+    await host.close();
+  });
+
+  it("restores on session/resume without replaying", async () => {
+    const provider = new ScriptedProvider([{ text: "first" }, { text: "second" }]);
+    const host = await hostWith(provider);
+    const sessions = new Set<string>();
+    const controllers = new Map<string, AbortController>();
+    const created = (await dispatch(
+      host,
+      sessions,
+      controllers,
+      { jsonrpc: "2.0", id: 1, method: "session/new" },
+      () => undefined,
+    )) as { sessionId: string };
+
+    await dispatch(
+      host,
+      sessions,
+      controllers,
+      {
+        jsonrpc: "2.0",
+        id: 2,
+        method: "session/prompt",
+        params: { sessionId: created.sessionId, prompt: "hi" },
+      },
+      () => undefined,
+    );
+
+    const notes: unknown[] = [];
+    const resumed = (await dispatch(
+      host,
+      sessions,
+      controllers,
+      {
+        jsonrpc: "2.0",
+        id: 3,
+        method: "session/resume",
+        params: { sessionId: created.sessionId },
+      },
+      (note) => notes.push(note),
+    )) as { sessionId: string; modes: { currentModeId: string } };
+    expect(resumed.sessionId).toBe(created.sessionId);
+    expect(resumed.modes.currentModeId).toBe("execute");
+    expect(JSON.stringify(notes)).toContain("available_commands_update");
+    expect(JSON.stringify(notes)).not.toContain("user_message_chunk");
+    expect(JSON.stringify(notes)).not.toContain("first");
+
+    const after: unknown[] = [];
+    await dispatch(
+      host,
+      sessions,
+      controllers,
+      {
+        jsonrpc: "2.0",
+        id: 4,
+        method: "session/prompt",
+        params: { sessionId: created.sessionId, prompt: "again" },
+      },
+      (note) => after.push(note),
+    );
+    expect(JSON.stringify(after)).toContain("second");
+    expect(JSON.stringify(after)).not.toContain("first");
+    await host.close();
+  });
+
+  it("closes an active session and rejects later prompts", async () => {
+    const host = await hostWith(new ScriptedProvider([{ text: "ok" }]));
+    const sessions = new Set<string>();
+    const controllers = new Map<string, AbortController>();
+    const created = (await dispatch(
+      host,
+      sessions,
+      controllers,
+      { jsonrpc: "2.0", id: 1, method: "session/new" },
+      () => undefined,
+    )) as { sessionId: string };
+
+    const closed = await dispatch(
+      host,
+      sessions,
+      controllers,
+      { jsonrpc: "2.0", id: 2, method: "session/close", params: { sessionId: created.sessionId } },
+      () => undefined,
+    );
+    expect(closed).toEqual({});
+    expect(sessions.has(created.sessionId)).toBe(false);
+
+    await expect(
+      dispatch(
+        host,
+        sessions,
+        controllers,
+        {
+          jsonrpc: "2.0",
+          id: 3,
+          method: "session/prompt",
+          params: { sessionId: created.sessionId, prompt: "hi" },
+        },
+        () => undefined,
+      ),
+    ).rejects.toThrow("unknown session");
+
+    await expect(
+      dispatch(
+        host,
+        sessions,
+        controllers,
+        { jsonrpc: "2.0", id: 4, method: "session/close", params: { sessionId: created.sessionId } },
+        () => undefined,
+      ),
+    ).rejects.toThrow("unknown session");
+
+    const notes: unknown[] = [];
+    const loaded = await dispatch(
+      host,
+      sessions,
+      controllers,
+      { jsonrpc: "2.0", id: 5, method: "session/load", params: { sessionId: created.sessionId } },
+      (note) => notes.push(note),
+    );
+    expect(loaded).toBeNull();
+    expect(sessions.has(created.sessionId)).toBe(true);
+    expect(JSON.stringify(notes)).not.toContain("user_message_chunk");
+    await host.close();
+  });
+});
+
+describe("ACP session list / delete", () => {
+  it("parses list cursors", () => {
+    expect(parseListCursor(undefined)).toBe(0);
+    expect(parseListCursor("3")).toBe(3);
+    expect(() => parseListCursor("nope")).toThrow("invalid cursor");
+  });
+
+  it("lists sessions with title and cwd filter", async () => {
+    const host = await hostWith(new ScriptedProvider([{ text: "hello from acp" }]));
+    const firstWorkspace = host.config.workspace;
+    const sessions = new Set<string>();
+    const controllers = new Map<string, AbortController>();
+    const other = fs.mkdtempSync(path.join(os.tmpdir(), "agent-acp-other-"));
+    const created = (await dispatch(
+      host,
+      sessions,
+      controllers,
+      { jsonrpc: "2.0", id: 1, method: "session/new" },
+      () => undefined,
+    )) as { sessionId: string };
+    const notes: unknown[] = [];
+    await dispatch(
+      host,
+      sessions,
+      controllers,
+      {
+        jsonrpc: "2.0",
+        id: 2,
+        method: "session/prompt",
+        params: { sessionId: created.sessionId, prompt: "first question" },
+      },
+      (note) => notes.push(note),
+    );
+    expect(JSON.stringify(notes)).toContain("session_info_update");
+    expect(JSON.stringify(notes)).toContain("first question");
+
+    const extra = fs.mkdtempSync(path.join(os.tmpdir(), "agent-acp-list-extra-"));
+    await dispatch(
+      host,
+      sessions,
+      controllers,
+      { jsonrpc: "2.0", id: 3, method: "session/new", params: { cwd: other, additionalDirectories: [extra] } },
+      () => undefined,
+    );
+
+    const listed = (await dispatch(
+      host,
+      sessions,
+      controllers,
+      { jsonrpc: "2.0", id: 4, method: "session/list" },
+      () => undefined,
+    )) as { sessions: Array<Record<string, unknown>>; nextCursor?: string };
+    expect(listed.nextCursor).toBeUndefined();
+    expect(listed.sessions).toHaveLength(2);
+    const mine = listed.sessions.find((row) => row.sessionId === created.sessionId);
+    expect(mine).toMatchObject({
+      sessionId: created.sessionId,
+      cwd: firstWorkspace,
+      title: "first question",
+    });
+    expect(typeof mine?.updatedAt).toBe("string");
+
+    const filtered = (await dispatch(
+      host,
+      sessions,
+      controllers,
+      { jsonrpc: "2.0", id: 5, method: "session/list", params: { cwd: other } },
+      () => undefined,
+    )) as { sessions: Array<Record<string, unknown>> };
+    expect(filtered.sessions).toHaveLength(1);
+    expect(filtered.sessions[0]?.cwd).toBe(path.resolve(other));
+    expect(filtered.sessions[0]?.additionalDirectories).toEqual([path.resolve(extra)]);
+
+    const paged = listAcpSessions(host, {}, 1);
+    expect(paged.sessions).toHaveLength(1);
+    expect(paged.nextCursor).toBe("1");
+    const rest = listAcpSessions(host, { cursor: paged.nextCursor }, 1);
+    expect(rest.sessions).toHaveLength(1);
+    expect(rest.nextCursor).toBeUndefined();
+    await host.close();
+  });
+
+  it("deletes sessions from history, including missing ids", async () => {
+    const host = await hostWith(new ScriptedProvider([{ text: "ok" }]));
+    const sessions = new Set<string>();
+    const controllers = new Map<string, AbortController>();
+    const created = (await dispatch(
+      host,
+      sessions,
+      controllers,
+      { jsonrpc: "2.0", id: 1, method: "session/new" },
+      () => undefined,
+    )) as { sessionId: string };
+
+    const deleted = await dispatch(
+      host,
+      sessions,
+      controllers,
+      { jsonrpc: "2.0", id: 2, method: "session/delete", params: { sessionId: created.sessionId } },
+      () => undefined,
+    );
+    expect(deleted).toEqual({});
+    expect(sessions.has(created.sessionId)).toBe(false);
+    expect(host.store.exists(created.sessionId)).toBe(false);
+
+    const listed = (await dispatch(
+      host,
+      sessions,
+      controllers,
+      { jsonrpc: "2.0", id: 3, method: "session/list" },
+      () => undefined,
+    )) as { sessions: unknown[] };
+    expect(listed.sessions).toEqual([]);
+
+    await expect(
+      dispatch(
+        host,
+        sessions,
+        controllers,
+        { jsonrpc: "2.0", id: 4, method: "session/delete", params: { sessionId: created.sessionId } },
+        () => undefined,
+      ),
+    ).resolves.toEqual({});
+
+    await expect(
+      dispatch(
+        host,
+        sessions,
+        controllers,
+        {
+          jsonrpc: "2.0",
+          id: 5,
+          method: "session/prompt",
+          params: { sessionId: created.sessionId, prompt: "hi" },
+        },
+        () => undefined,
+      ),
+    ).rejects.toThrow("unknown session");
+    await host.close();
+  });
+});
+
+describe("ACP slash commands", () => {
+  it("parses known commands and leaves unknown text alone", () => {
+    expect(parseSlashCommand("/plan inspect auth")).toEqual({ name: "plan", rest: "inspect auth" });
+    expect(parseSlashCommand("/skills")).toEqual({ name: "skills", rest: "" });
+    expect(parseSlashCommand("/unknown foo")).toEqual({ rest: "/unknown foo" });
+    expect(parseSlashCommand("not a command")).toEqual({ rest: "not a command" });
+  });
+
+  it("advertises commands on session/new and handles /plan /skills", async () => {
+    const provider = new ScriptedProvider([{ text: "from model" }]);
+    const host = await hostWith(provider);
+    const sessions = new Set<string>();
+    const controllers = new Map<string, AbortController>();
+    const createdNotes: unknown[] = [];
+    const created = (await dispatch(
+      host,
+      sessions,
+      controllers,
+      { jsonrpc: "2.0", id: 1, method: "session/new" },
+      (note) => createdNotes.push(note),
+    )) as { sessionId: string };
+    expect(JSON.stringify(createdNotes)).toContain("available_commands_update");
+    expect(JSON.stringify(createdNotes)).toContain('"name":"plan"');
+
+    const planNotes: unknown[] = [];
+    const planned = await dispatch(
+      host,
+      sessions,
+      controllers,
+      {
+        jsonrpc: "2.0",
+        id: 2,
+        method: "session/prompt",
+        params: { sessionId: created.sessionId, prompt: "/plan" },
+      },
+      (note) => planNotes.push(note),
+    );
+    expect(planned).toEqual({ stopReason: "end_turn" });
+    expect(host.config.runMode).toBe("plan");
+    expect(JSON.stringify(planNotes)).toContain("current_mode_update");
+    expect(JSON.stringify(planNotes)).not.toContain("from model");
+
+    const skillNotes: unknown[] = [];
+    await dispatch(
+      host,
+      sessions,
+      controllers,
+      {
+        jsonrpc: "2.0",
+        id: 3,
+        method: "session/prompt",
+        params: { sessionId: created.sessionId, prompt: "/skills" },
+      },
+      (note) => skillNotes.push(note),
+    );
+    expect(JSON.stringify(skillNotes)).toContain("(no skills)");
+    expect(JSON.stringify(skillNotes)).not.toContain("from model");
+
+    const restNotes: unknown[] = [];
+    await dispatch(
+      host,
+      sessions,
+      controllers,
+      {
+        jsonrpc: "2.0",
+        id: 4,
+        method: "session/prompt",
+        params: { sessionId: created.sessionId, prompt: "/execute say hi" },
+      },
+      (note) => restNotes.push(note),
+    );
+    expect(host.config.runMode).toBe("default");
+    expect(JSON.stringify(restNotes)).toContain("from model");
+    await host.close();
+  });
+
+  it("lets /yes skip client permission prompts", async () => {
+    const provider = new ScriptedProvider([
+      { toolCalls: [{ id: "c1", name: "shell", arguments: { command: "echo hi" } }] },
+      { text: "done" },
+    ]);
+    const host = await hostWith(provider, { approvalMode: "ask", sandbox: "none" });
+    const sessions = new Set<string>();
+    const controllers = new Map<string, AbortController>();
+    const created = (await dispatch(
+      host,
+      sessions,
+      controllers,
+      { jsonrpc: "2.0", id: 1, method: "session/new" },
+      () => undefined,
+    )) as { sessionId: string };
+
+    await dispatch(
+      host,
+      sessions,
+      controllers,
+      {
+        jsonrpc: "2.0",
+        id: 2,
+        method: "session/prompt",
+        params: { sessionId: created.sessionId, prompt: "/yes" },
+      },
+      () => undefined,
+    );
+    expect(host.config.approvalMode).toBe("auto");
+
+    const methods: string[] = [];
+    const result = await dispatch(
+      host,
+      sessions,
+      controllers,
+      {
+        jsonrpc: "2.0",
+        id: 3,
+        method: "session/prompt",
+        params: { sessionId: created.sessionId, prompt: "run it" },
+      },
+      () => undefined,
+      async (method) => {
+        methods.push(method);
+        return { outcome: { outcome: "selected", optionId: "allow-once" } };
+      },
+    );
+    expect(result).toEqual({ stopReason: "end_turn" });
+    expect(methods).toEqual([]);
+    await host.close();
+  });
+});
+
+describe("ACP session config options", () => {
+  it("sets mode, model, and approval through session/set_config_option", async () => {
+    const host = await hostWith(new ScriptedProvider([{ text: "ok" }]));
+    const sessions = new Set<string>();
+    const controllers = new Map<string, AbortController>();
+    const created = (await dispatch(
+      host,
+      sessions,
+      controllers,
+      { jsonrpc: "2.0", id: 1, method: "session/new" },
+      () => undefined,
+    )) as { sessionId: string; configOptions: Array<{ id: string; currentValue: unknown }> };
+    expect(created.configOptions.find((option) => option.id === "model")?.currentValue).toBe(host.config.model);
+
+    const notes: unknown[] = [];
+    const updated = (await dispatch(
+      host,
+      sessions,
+      controllers,
+      {
+        jsonrpc: "2.0",
+        id: 2,
+        method: "session/set_config_option",
+        params: { sessionId: created.sessionId, configId: "mode", value: "plan" },
+      },
+      (note) => notes.push(note),
+    )) as { configOptions: Array<{ id: string; currentValue: unknown }> };
+    expect(host.config.runMode).toBe("plan");
+    expect(updated.configOptions.find((option) => option.id === "mode")?.currentValue).toBe("plan");
+    expect(JSON.stringify(notes)).toContain("current_mode_update");
+    expect(JSON.stringify(notes)).toContain("config_option_update");
+
+    await dispatch(
+      host,
+      sessions,
+      controllers,
+      {
+        jsonrpc: "2.0",
+        id: 3,
+        method: "session/set_config_option",
+        params: { sessionId: created.sessionId, configId: "model", value: "grok-4" },
+      },
+      () => undefined,
+    );
+    expect(host.config.model).toBe("grok-4");
+
+    await dispatch(
+      host,
+      sessions,
+      controllers,
+      {
+        jsonrpc: "2.0",
+        id: 4,
+        method: "session/set_config_option",
+        params: { sessionId: created.sessionId, configId: "approval", value: "auto" },
+      },
+      () => undefined,
+    );
+    expect(host.config.approvalMode).toBe("auto");
+
+    await expect(
+      dispatch(
+        host,
+        sessions,
+        controllers,
+        {
+          jsonrpc: "2.0",
+          id: 5,
+          method: "session/set_config_option",
+          params: { sessionId: created.sessionId, configId: "model", value: "not-a-model" },
+        },
+        () => undefined,
+      ),
+    ).rejects.toThrow("invalid model value");
+    await expect(
+      dispatch(
+        host,
+        sessions,
+        controllers,
+        {
+          jsonrpc: "2.0",
+          id: 6,
+          method: "session/set_config_option",
+          params: { sessionId: created.sessionId, configId: "nope", value: "x" },
+        },
+        () => undefined,
+      ),
+    ).rejects.toThrow("unknown config option");
+    await host.close();
+  });
+
+  it("keeps modes in sync when set_mode changes config options", async () => {
+    const host = await hostWith(new ScriptedProvider([{ text: "ok" }]));
+    const sessions = new Set<string>();
+    const controllers = new Map<string, AbortController>();
+    const created = (await dispatch(
+      host,
+      sessions,
+      controllers,
+      { jsonrpc: "2.0", id: 1, method: "session/new" },
+      () => undefined,
+    )) as { sessionId: string };
+    const notes: unknown[] = [];
+    await dispatch(
+      host,
+      sessions,
+      controllers,
+      { jsonrpc: "2.0", id: 2, method: "session/set_mode", params: { sessionId: created.sessionId, modeId: "plan" } },
+      (note) => notes.push(note),
+    );
+    expect(host.config.runMode).toBe("plan");
+    expect(JSON.stringify(notes)).toContain("config_option_update");
+    expect(JSON.stringify(notes)).toContain('"currentValue":"plan"');
+    await host.close();
+  });
+});
+
+describe("ACP usage updates", () => {
+  it("picks a context window from the model id", () => {
+    expect(contextWindowSize("claude-sonnet-4-5", 100_000)).toBe(200_000);
+    expect(contextWindowSize("grok-4", 100_000)).toBe(256_000);
+    expect(contextWindowSize("gpt-4.1", 100_000)).toBe(1_047_576);
+    expect(contextWindowSize("mystery", 100_000)).toBe(128_000);
+  });
+
+  it("notifies usage_update on session/new and after a prompt", async () => {
+    const host = await hostWith(new ScriptedProvider([{ text: "hello from acp" }]));
+    const sessions = new Set<string>();
+    const controllers = new Map<string, AbortController>();
+    const createdNotes: unknown[] = [];
+    const created = (await dispatch(
+      host,
+      sessions,
+      controllers,
+      { jsonrpc: "2.0", id: 1, method: "session/new" },
+      (note) => createdNotes.push(note),
+    )) as { sessionId: string };
+    const createdUsage = createdNotes.find(
+      (note) => (note as { update?: { sessionUpdate?: string } }).update?.sessionUpdate === "usage_update",
+    ) as { update: { used: number; size: number } };
+    expect(createdUsage.update.used).toBe(0);
+    expect(createdUsage.update.size).toBe(contextWindowSize(host.config.model, host.config.compactTokens));
+
+    const promptNotes: unknown[] = [];
+    await dispatch(
+      host,
+      sessions,
+      controllers,
+      {
+        jsonrpc: "2.0",
+        id: 2,
+        method: "session/prompt",
+        params: { sessionId: created.sessionId, prompt: "hi there" },
+      },
+      (note) => promptNotes.push(note),
+    );
+    const promptUsage = promptNotes.find(
+      (note) => (note as { update?: { sessionUpdate?: string } }).update?.sessionUpdate === "usage_update",
+    ) as { update: { used: number; size: number } };
+    expect(promptUsage.update.used).toBeGreaterThan(0);
+    expect(promptUsage.update.size).toBe(createdUsage.update.size);
+    expect(acpUsageUpdate(host, created.sessionId).used).toBe(promptUsage.update.used);
+    await host.close();
+  });
+
+  it("sends usage_update after resume without replaying history", async () => {
+    const host = await hostWith(new ScriptedProvider([{ text: "first" }, { text: "second" }]));
+    const sessions = new Set<string>();
+    const controllers = new Map<string, AbortController>();
+    const created = (await dispatch(
+      host,
+      sessions,
+      controllers,
+      { jsonrpc: "2.0", id: 1, method: "session/new" },
+      () => undefined,
+    )) as { sessionId: string };
+    await dispatch(
+      host,
+      sessions,
+      controllers,
+      {
+        jsonrpc: "2.0",
+        id: 2,
+        method: "session/prompt",
+        params: { sessionId: created.sessionId, prompt: "hi" },
+      },
+      () => undefined,
+    );
+    const notes: unknown[] = [];
+    await dispatch(
+      host,
+      sessions,
+      controllers,
+      { jsonrpc: "2.0", id: 3, method: "session/resume", params: { sessionId: created.sessionId } },
+      (note) => notes.push(note),
+    );
+    expect(JSON.stringify(notes)).toContain("usage_update");
+    expect(JSON.stringify(notes)).not.toContain("user_message_chunk");
+    const usage = notes.find(
+      (note) => (note as { update?: { sessionUpdate?: string } }).update?.sessionUpdate === "usage_update",
+    ) as { update: { used: number } };
+    expect(usage.update.used).toBeGreaterThan(0);
     await host.close();
   });
 });

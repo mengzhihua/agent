@@ -16,4 +16,16 @@ describe("workspace paths", () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "agent-ws-"));
     expect(() => resolveInWorkspace(root, "../secret")).toThrow(/escapes workspace/);
   });
+
+  it("allows extra roots for sibling and absolute paths", () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "agent-ws-"));
+    const extra = fs.mkdtempSync(path.join(os.tmpdir(), "agent-extra-"));
+    fs.writeFileSync(path.join(extra, "lib.ts"), "export const n = 1;\n");
+    const abs = resolveInWorkspace(root, path.join(extra, "lib.ts"), [extra]);
+    expect(abs).toBe(path.join(extra, "lib.ts"));
+    const rel = path.relative(root, path.join(extra, "lib.ts"));
+    expect(resolveInWorkspace(root, rel, [extra])).toBe(path.join(extra, "lib.ts"));
+    expect(() => resolveInWorkspace(root, rel)).toThrow(/escapes workspace/);
+    expect(toWorkspacePath(root, abs, [extra])).toBe(path.join(extra, "lib.ts").split(path.sep).join("/"));
+  });
 });

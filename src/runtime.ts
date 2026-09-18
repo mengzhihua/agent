@@ -20,6 +20,7 @@ export interface SessionRuntime {
   artifacts: ArtifactStore;
   browser: BrowserSession;
   files: FileIo;
+  extraRoots: string[];
   askUser?: AskUserFn;
   terminal?: AcpTerminal;
   onTerminal?: (callId: string, terminalId: string) => void;
@@ -36,15 +37,18 @@ export function createSessionRuntime(
     askUser?: AskUserFn;
     files?: FileIo;
     workspace?: string;
+    extraRoots?: string[];
   } = {},
 ): SessionRuntime {
   const workspace = extras.workspace ?? config.workspace;
+  const extraRoots = extras.extraRoots ?? [];
   return {
     sessionId,
     workspace,
+    extraRoots,
     artifacts: extras.artifacts ?? new ArtifactStore(config.artifactsDir, workspace),
     browser: extras.browser ?? new BrowserSession(createBrowserDriver(config.browserBackend)),
-    files: extras.files ?? diskFileIo(workspace),
+    files: extras.files ?? diskFileIo(workspace, extraRoots),
     askUser: extras.askUser,
   };
 }

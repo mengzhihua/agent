@@ -116,7 +116,7 @@ async function main(): Promise<void> {
       return;
     }
     for (const row of rows) {
-      console.log(`${row.id}  ${row.timestamp}  ${row.model}  ${row.cwd}`);
+      console.log(`${row.id}  ${row.timestamp}  ${row.model}  ${row.cwd}${row.title ? `  ${row.title}` : ""}`);
     }
     return;
   }

@@ -19,7 +19,11 @@ describe("session store", () => {
     });
     store.append("s1", { type: "user", id: "u1", timestamp: "2026-09-17T00:00:01.000Z", text: "hello" });
     expect(store.read("s1")).toHaveLength(2);
-    expect(store.list()[0]?.id).toBe("s1");
+    expect(store.list()[0]).toMatchObject({ id: "s1", title: "hello" });
+    store.delete("s1");
+    expect(store.exists("s1")).toBe(false);
+    expect(store.list()).toEqual([]);
+    store.delete("s1");
   });
 });
 
