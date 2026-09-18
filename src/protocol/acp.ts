@@ -5,6 +5,7 @@ import type { ApprovalRequest, LoopEvent, Risk, RunMode } from "../types.js";
 import { encodeMessage, extractMessages, type Framing } from "./framing.js";
 import { createAcpFileIo, hasClientFs, parseClientCapabilities } from "./fs.js";
 import type { NotifyFn, RequestFn } from "./rpc.js";
+import { clientTerminalEnabled, createAcpTerminal } from "./terminal.js";
 
 interface RpcRequest {
   jsonrpc: "2.0";
@@ -213,6 +214,7 @@ export async function dispatch(
   switch (req.method) {
     case "initialize":
       host.clientFs = parseClientCapabilities(req.params);
+      host.clientTerminal = clientTerminalEnabled(req.params);
       return {
         protocolVersion: ACP_PROTOCOL_VERSION,
         agentCapabilities: {
@@ -220,7 +222,7 @@ export async function dispatch(
           promptCapabilities: { image: false, audio: false, embeddedContext: false },
           mcpCapabilities: { http: true, sse: false },
         },
-        agentInfo: { name: "agent", version: "0.7.0" },
+        agentInfo: { name: "agent", version: "0.8.0" },
         authMethods: [],
       };
     case "authenticate":
@@ -259,6 +261,8 @@ export async function dispatch(
       const previousAsk = host.askUser;
       const runtime = host.runtimeFor(sessionId);
       const previousFiles = runtime.files;
+      const previousTerminal = runtime.terminal;
+      const previousOnTerminal = runtime.onTerminal;
       if (request) {
         bindAcpApprover(host, sessionId, request);
         if (host.config.approvalMode === "auto") host.approver = previousApprover;
@@ -270,6 +274,20 @@ export async function dispatch(
             caps: host.clientFs,
           });
         }
+        if (host.clientTerminal) {
+          runtime.terminal = createAcpTerminal(sessionId, request);
+          runtime.onTerminal = (callId, terminalId) => {
+            notify({
+              sessionId,
+              update: {
+                sessionUpdate: "tool_call_update",
+                toolCallId: callId,
+                status: "in_progress",
+                content: [{ type: "terminal", terminalId }],
+              },
+            });
+          };
+        }
       }
       try {
         for await (const event of host.prompt(sessionId, prompt, controller.signal)) {
@@ -280,6 +298,8 @@ export async function dispatch(
         host.approver = previousApprover;
         host.askUser = previousAsk;
         runtime.files = previousFiles;
+        runtime.terminal = previousTerminal;
+        runtime.onTerminal = previousOnTerminal;
         controllers.delete(sessionId);
       }
     }

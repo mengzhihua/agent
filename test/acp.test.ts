@@ -12,6 +12,7 @@ import {
   parsePermissionOutcome,
 } from "../src/protocol/acp.js";
 import { parseClientCapabilities } from "../src/protocol/fs.js";
+import { clientTerminalEnabled } from "../src/protocol/terminal.js";
 import { encodeMessage, extractMessages } from "../src/protocol/framing.js";
 import { ScriptedProvider } from "../src/provider/scripted.js";
 import { SessionStore } from "../src/session/store.js";
@@ -392,6 +393,119 @@ describe("ACP client filesystem", () => {
     );
     expect(methods).toEqual([]);
     expect(JSON.stringify(notes)).toContain("disk only");
+    await host.close();
+  });
+});
+
+describe("ACP client terminal", () => {
+  it("parses initialize clientCapabilities.terminal", () => {
+    expect(clientTerminalEnabled(undefined)).toBe(false);
+    expect(clientTerminalEnabled({ clientCapabilities: { terminal: true } })).toBe(true);
+  });
+
+  it("runs shell through terminal/create and embeds the terminal id", async () => {
+    const provider = new ScriptedProvider([
+      { toolCalls: [{ id: "c1", name: "shell", arguments: { command: "echo hi" } }] },
+      { text: "ran" },
+    ]);
+    const host = await hostWith(provider, { sandbox: "none" });
+    const sessions = new Set<string>();
+    const controllers = new Map<string, AbortController>();
+    await dispatch(
+      host,
+      sessions,
+      controllers,
+      {
+        jsonrpc: "2.0",
+        id: 1,
+        method: "initialize",
+        params: { protocolVersion: 1, clientCapabilities: { terminal: true } },
+      },
+      () => undefined,
+    );
+    const created = (await dispatch(
+      host,
+      sessions,
+      controllers,
+      { jsonrpc: "2.0", id: 2, method: "session/new" },
+      () => undefined,
+    )) as { sessionId: string };
+
+    const methods: string[] = [];
+    const notes: unknown[] = [];
+    await dispatch(
+      host,
+      sessions,
+      controllers,
+      {
+        jsonrpc: "2.0",
+        id: 3,
+        method: "session/prompt",
+        params: { sessionId: created.sessionId, prompt: "run echo" },
+      },
+      (note) => notes.push(note),
+      async (method, params) => {
+        methods.push(method);
+        if (method === "terminal/create") {
+          expect(JSON.stringify(params)).toContain("echo hi");
+          return { terminalId: "term_1" };
+        }
+        if (method === "terminal/wait_for_exit") return { exitCode: 0, signal: null };
+        if (method === "terminal/output") return { output: "hi\n", truncated: false, exitStatus: { exitCode: 0 } };
+        if (method === "terminal/release") return {};
+        throw new Error(`unexpected ${method}`);
+      },
+    );
+    expect(methods).toEqual(["terminal/create", "terminal/wait_for_exit", "terminal/output", "terminal/release"]);
+    expect(JSON.stringify(notes)).toContain("term_1");
+    expect(JSON.stringify(notes)).toContain('"type":"terminal"');
+    expect(JSON.stringify(notes)).toContain("hi");
+    await host.close();
+  });
+
+  it("does not call terminal methods without the capability", async () => {
+    const provider = new ScriptedProvider([
+      { toolCalls: [{ id: "c1", name: "shell", arguments: { command: "echo local" } }] },
+      { text: "ran" },
+    ]);
+    const host = await hostWith(provider, { sandbox: "none" });
+    const sessions = new Set<string>();
+    const controllers = new Map<string, AbortController>();
+    await dispatch(
+      host,
+      sessions,
+      controllers,
+      { jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: 1 } },
+      () => undefined,
+    );
+    const created = (await dispatch(
+      host,
+      sessions,
+      controllers,
+      { jsonrpc: "2.0", id: 2, method: "session/new" },
+      () => undefined,
+    )) as { sessionId: string };
+
+    const methods: string[] = [];
+    const notes: unknown[] = [];
+    await dispatch(
+      host,
+      sessions,
+      controllers,
+      {
+        jsonrpc: "2.0",
+        id: 3,
+        method: "session/prompt",
+        params: { sessionId: created.sessionId, prompt: "run echo" },
+      },
+      (note) => notes.push(note),
+      async (method) => {
+        methods.push(method);
+        return {};
+      },
+    );
+    expect(methods.filter((name) => name.startsWith("terminal/"))).toEqual([]);
+    expect(JSON.stringify(notes)).toContain("local");
     await host.close();
   });
 });
