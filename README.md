@@ -2,7 +2,7 @@
 
 通用 agent 软件：一个极简的模型–工具循环，外面套 harness。
 
-当前进度：**期 7 — ACP 客户端终端**。
+当前进度：**期 9 — ACP 额外工作区目录**。
 
 - [行业研究](docs/industry-agent-research.md) — Codex、Claude Code、Grok Build、Devin、Cursor、Gemini CLI、Manus、OpenHands 等怎么做，以及通用 harness 的收敛形态
 - [期 0](docs/phase-0.md)
@@ -13,6 +13,8 @@
 - [期 5](docs/phase-5.md)
 - [期 6](docs/phase-6.md)
 - [期 7](docs/phase-7.md)
+- [期 8](docs/phase-8.md)
+- [期 9](docs/phase-9.md)
 
 ## 研究结论（极简）
 
@@ -43,7 +45,7 @@ npm run agent -- eval test/evals # 确定性回归（不调模型）
 npm run agent -- --browser chrome -y -p "Open a page and screenshot"
 npm run agent -- --list
 npm run agent -- --resume <id> -p "continue"
-npm run agent -- acp             # JSON-RPC（NDJSON 或 Content-Length；ask 时向客户端要权限；fs/terminal 能力走编辑器）
+npm run agent -- acp             # JSON-RPC（NDJSON 或 Content-Length；ask 时向客户端要权限；fs/terminal/MCP 走编辑器）
 npm run agent                    # 交互（/plan /execute /skills；ask_user 走终端）
 ```
 

@@ -48,6 +48,7 @@ async function walkGrep(
   pattern: string,
   globFilter: string | undefined,
   maxMatches: number,
+  extraRoots: string[] = [],
 ): Promise<string> {
   const regex = new RegExp(pattern);
   const hits: string[] = [];
@@ -69,7 +70,7 @@ async function walkGrep(
         const lines = text.split("\n");
         for (let i = 0; i < lines.length; i++) {
           if (regex.test(lines[i]!)) {
-            hits.push(`${toWorkspacePath(workspace, abs)}:${i + 1}:${lines[i]}`);
+            hits.push(`${toWorkspacePath(workspace, abs, extraRoots)}:${i + 1}:${lines[i]}`);
             if (hits.length >= maxMatches) return;
           }
         }
@@ -89,11 +90,12 @@ export async function grepTool(
   glob: string | undefined,
   maxMatches: number,
   signal: AbortSignal,
+  extraRoots: string[] = [],
 ): Promise<string> {
-  const root = relPath ? resolveInWorkspace(workspace, relPath) : resolveInWorkspace(workspace, ".");
+  const root = relPath ? resolveInWorkspace(workspace, relPath, extraRoots) : resolveInWorkspace(workspace, ".", extraRoots);
   const output = hasRipgrep()
     ? await runRg(workspace, pattern, root, glob, maxMatches, signal)
-    : await walkGrep(workspace, root, pattern, glob, maxMatches);
+    : await walkGrep(workspace, root, pattern, glob, maxMatches, extraRoots);
   return truncate(output, 64 * 1024);
 }
 

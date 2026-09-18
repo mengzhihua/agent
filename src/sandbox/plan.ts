@@ -16,12 +16,12 @@ export function detectSandboxBackend(mode: AgentConfig["sandbox"]): SandboxBacke
   return hasBwrap() ? "bwrap" : "none";
 }
 
-export function planShell(config: AgentConfig, command: string, cwd: string): ShellPlan {
+export function planShell(config: AgentConfig, command: string, cwd: string, extraRoots: string[] = []): ShellPlan {
   const env = filterSandboxEnv();
   if (config.sandboxBackend === "bwrap") {
     return {
       file: "bwrap",
-      args: bwrapArgs(config.workspace, cwd, command, [config.artifactsDir]),
+      args: bwrapArgs(config.workspace, cwd, command, [config.artifactsDir, ...extraRoots]),
       cwd: config.workspace,
       shell: false,
       env,

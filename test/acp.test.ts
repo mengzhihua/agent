@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { loadConfig } from "../src/config.js";
 import { AgentHost } from "../src/host.js";
@@ -9,8 +10,10 @@ import {
   ACP_PROTOCOL_VERSION,
   bindAcpApprover,
   dispatch,
+  parseAdditionalDirectories,
   parsePermissionOutcome,
 } from "../src/protocol/acp.js";
+import { parseAcpMcpServers } from "../src/protocol/mcp.js";
 import { parseClientCapabilities } from "../src/protocol/fs.js";
 import { clientTerminalEnabled } from "../src/protocol/terminal.js";
 import { encodeMessage, extractMessages } from "../src/protocol/framing.js";
@@ -61,7 +64,10 @@ describe("ACP-shaped protocol", () => {
     const init = await dispatch(host, sessions, controllers, { jsonrpc: "2.0", id: 1, method: "initialize" }, () => undefined);
     expect(init).toMatchObject({
       protocolVersion: ACP_PROTOCOL_VERSION,
-      agentCapabilities: { loadSession: true },
+      agentCapabilities: {
+        loadSession: true,
+        sessionCapabilities: { additionalDirectories: {} },
+      },
     });
 
     const created = (await dispatch(
@@ -506,6 +512,130 @@ describe("ACP client terminal", () => {
     );
     expect(methods.filter((name) => name.startsWith("terminal/"))).toEqual([]);
     expect(JSON.stringify(notes)).toContain("local");
+    await host.close();
+  });
+});
+
+const echoServer = path.join(path.dirname(fileURLToPath(import.meta.url)), "fixtures/mcp/echo-server.mjs");
+
+describe("ACP session MCP", () => {
+  it("parses stdio and HTTP server lists and skips SSE", () => {
+    const parsed = parseAcpMcpServers([
+      {
+        name: "echo",
+        command: "/usr/bin/node",
+        args: ["echo.mjs"],
+        env: [{ name: "TOKEN", value: "abc" }],
+      },
+      {
+        type: "http",
+        name: "api",
+        url: "https://example.com/mcp",
+        headers: [{ name: "Authorization", value: "Bearer x" }],
+      },
+      { type: "sse", name: "events", url: "https://example.com/sse" },
+      { name: "broken" },
+    ]);
+    expect(parsed.echo).toEqual({
+      command: "/usr/bin/node",
+      args: ["echo.mjs"],
+      env: { TOKEN: "abc" },
+    });
+    expect(parsed.api).toEqual({
+      url: "https://example.com/mcp",
+      headers: { Authorization: "Bearer x" },
+    });
+    expect(parsed.events).toBeUndefined();
+    expect(parsed.broken).toBeUndefined();
+  });
+
+  it("connects session/new mcpServers and exposes the tool", async () => {
+    const provider = new ScriptedProvider([
+      { toolCalls: [{ id: "c1", name: "mcp__echo__echo", arguments: { text: "hi" } }] },
+      { text: "echoed" },
+    ]);
+    const host = await hostWith(provider);
+    const sessions = new Set<string>();
+    const controllers = new Map<string, AbortController>();
+    const created = (await dispatch(
+      host,
+      sessions,
+      controllers,
+      {
+        jsonrpc: "2.0",
+        id: 1,
+        method: "session/new",
+        params: {
+          mcpServers: [{ name: "echo", command: process.execPath, args: [echoServer] }],
+        },
+      },
+      () => undefined,
+    )) as { sessionId: string };
+
+    const notes: unknown[] = [];
+    const result = await dispatch(
+      host,
+      sessions,
+      controllers,
+      {
+        jsonrpc: "2.0",
+        id: 2,
+        method: "session/prompt",
+        params: { sessionId: created.sessionId, prompt: "echo hi" },
+      },
+      (note) => notes.push(note),
+    );
+    expect(result).toEqual({ stopReason: "end_turn" });
+    expect(JSON.stringify(notes)).toContain("echo:hi");
+    await host.close();
+  });
+});
+
+describe("ACP additionalDirectories", () => {
+  it("keeps only unique absolute paths", () => {
+    expect(parseAdditionalDirectories(["/tmp/a", "/tmp/a/", "relative", 1, "/tmp/b"])).toEqual([
+      path.resolve("/tmp/a"),
+      path.resolve("/tmp/b"),
+    ]);
+  });
+
+  it("lets read touch a file in an extra root", async () => {
+    const extra = fs.mkdtempSync(path.join(os.tmpdir(), "agent-acp-extra-"));
+    fs.writeFileSync(path.join(extra, "lib.ts"), "export const n = 1;\n");
+    const provider = new ScriptedProvider([
+      { toolCalls: [{ id: "c1", name: "read", arguments: { path: path.join(extra, "lib.ts") } }] },
+      { text: "saw lib" },
+    ]);
+    const host = await hostWith(provider);
+    const sessions = new Set<string>();
+    const controllers = new Map<string, AbortController>();
+    const created = (await dispatch(
+      host,
+      sessions,
+      controllers,
+      {
+        jsonrpc: "2.0",
+        id: 1,
+        method: "session/new",
+        params: { additionalDirectories: [extra] },
+      },
+      () => undefined,
+    )) as { sessionId: string };
+
+    const notes: unknown[] = [];
+    await dispatch(
+      host,
+      sessions,
+      controllers,
+      {
+        jsonrpc: "2.0",
+        id: 2,
+        method: "session/prompt",
+        params: { sessionId: created.sessionId, prompt: "read lib" },
+      },
+      (note) => notes.push(note),
+    );
+    expect(JSON.stringify(notes)).toContain("export const n = 1");
     await host.close();
   });
 });

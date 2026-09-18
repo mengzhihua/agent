@@ -9,6 +9,7 @@ import { runTurn } from "./loop/agent-loop.js";
 import { McpManager } from "./mcp/manager.js";
 import { autoApprover } from "./permissions/policy.js";
 import type { ClientFsCaps } from "./protocol/fs.js";
+import { parseAcpMcpServers } from "./protocol/mcp.js";
 import { createSessionRuntime, type AskUserFn, type SessionRuntime } from "./runtime.js";
 import { diskFileIo } from "./files/io.js";
 import { SessionStore } from "./session/store.js";
@@ -108,6 +109,12 @@ export class AgentHost {
     return id;
   }
 
+  setSessionRoots(sessionId: string, extraRoots: string[]): void {
+    const runtime = this.runtimeFor(sessionId);
+    runtime.extraRoots = extraRoots;
+    runtime.files = diskFileIo(runtime.workspace, extraRoots);
+  }
+
   resume(sessionId: string, cwd?: string): void {
     if (!this.store.exists(sessionId)) {
       throw new Error(`session not found: ${sessionId}`);
@@ -115,22 +122,42 @@ export class AgentHost {
     if (cwd) this.setWorkspace(cwd);
     const runtime = this.runtimeFor(sessionId);
     runtime.workspace = this.config.workspace;
-    runtime.files = diskFileIo(this.config.workspace);
+    runtime.files = diskFileIo(runtime.workspace, runtime.extraRoots);
   }
 
   async *prompt(sessionId: string, userText: string, signal: AbortSignal): AsyncGenerator<LoopEvent> {
+    const runtime = this.runtimeFor(sessionId);
     yield* runTurn({
       store: this.store,
       sessionId,
       userText,
       provider: this.provider,
-      tools: this.tools,
+      tools: runtime.tools ?? this.tools,
       config: this.config,
       approver: this.approver,
       signal,
       skills: this.skills,
       hooks: this.hooks,
-      runtime: this.runtimeFor(sessionId),
+      runtime,
+    });
+  }
+
+  async attachSessionMcp(sessionId: string, mcpServers: unknown): Promise<void> {
+    const configs = parseAcpMcpServers(mcpServers);
+    if (Object.keys(configs).length === 0) return;
+    const extra = await McpManager.connectConfigs(configs);
+    const runtime = this.runtimeFor(sessionId);
+    await runtime.mcp?.close();
+    runtime.mcp = extra;
+    const extraHandlers = [...(await this.mcp.handlers()), ...(await extra.handlers())];
+    runtime.tools = this.createTools(extraHandlers);
+  }
+
+  private createTools(extraHandlers: Awaited<ReturnType<McpManager["handlers"]>>): ToolRegistry {
+    return ToolRegistry.create(this.config, {
+      skills: this.skills,
+      extraHandlers,
+      runSubagent: (input, signal) => this.runSubagent(input, signal),
     });
   }
 
@@ -179,7 +206,12 @@ export class AgentHost {
   }
 
   async close(): Promise<void> {
-    await Promise.all([...this.runtimes.values()].map((runtime) => runtime.browser.close()));
+    await Promise.all(
+      [...this.runtimes.values()].map(async (runtime) => {
+        await runtime.browser.close();
+        await runtime.mcp?.close();
+      }),
+    );
     this.runtimes.clear();
     await this.mcp.close();
   }

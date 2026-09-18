@@ -42,7 +42,11 @@ export function artifactTool(config: AgentConfig): ToolHandler {
         const kind = (asOptionalString(args, "kind") as "file" | "report" | "download" | undefined) ?? "file";
         const from = asOptionalString(args, "path");
         if (from) {
-          const abs = resolveInWorkspace(config.workspace, from);
+          const abs = resolveInWorkspace(
+            ctx.runtime.workspace ?? config.workspace,
+            from,
+            ctx.runtime.extraRoots ?? [],
+          );
           if (!fs.existsSync(abs)) throw new Error(`file not found: ${from}`);
           const saved = ctx.runtime.artifacts.copyFrom(abs, title, ctx.runtime.sessionId);
           return `saved ${saved.path}`;

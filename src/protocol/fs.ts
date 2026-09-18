@@ -30,12 +30,14 @@ export function createAcpFileIo(opts: {
   sessionId: string;
   request: RequestFn;
   caps: ClientFsCaps;
+  extraRoots?: string[];
 }): FileIo {
-  const disk = diskFileIo(opts.workspace);
+  const extraRoots = opts.extraRoots ?? [];
+  const disk = diskFileIo(opts.workspace, extraRoots);
   return {
     async readText(relPath) {
       if (!opts.caps.readTextFile) return disk.readText(relPath);
-      const abs = resolveInWorkspace(opts.workspace, relPath);
+      const abs = resolveInWorkspace(opts.workspace, relPath, extraRoots);
       try {
         const raw = await opts.request("fs/read_text_file", {
           sessionId: opts.sessionId,
@@ -53,7 +55,7 @@ export function createAcpFileIo(opts: {
     },
     async writeText(relPath, content) {
       if (!opts.caps.writeTextFile) return disk.writeText(relPath, content);
-      const abs = resolveInWorkspace(opts.workspace, relPath);
+      const abs = resolveInWorkspace(opts.workspace, relPath, extraRoots);
       await opts.request("fs/write_text_file", {
         sessionId: opts.sessionId,
         path: abs,
