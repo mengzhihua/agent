@@ -23,7 +23,7 @@ if ($major -lt 22) {
 
 if ($args -contains "--uninstall") {
   if (Test-Path (Join-Path $Src "scripts\setup.mjs")) {
-    & node (Join-Path $Src "scripts\setup.mjs") --prefix $Prefix --uninstall
+    & node (Join-Path $Src "scripts\setup.mjs") --prefix $Prefix --from $Src --uninstall
   } else {
     Remove-Item -Recurse -Force $Src -ErrorAction SilentlyContinue
     Remove-Item -Force (Join-Path $Prefix "bin\agent.cmd") -ErrorAction SilentlyContinue
@@ -55,4 +55,4 @@ try {
 
 & node (Join-Path $Src "scripts\setup.mjs") --from $Src --prefix $Prefix
 Write-Host ""
-Write-Host "Windows install complete. Open a new terminal if PATH was updated."
+Write-Host "Windows install complete. Open a new terminal so the user PATH picks up agent."

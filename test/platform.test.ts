@@ -51,5 +51,7 @@ describe("doctor", () => {
     expect(out).toContain(`os ${process.platform}`);
     expect(out).toMatch(/sandbox (bwrap|none)/);
     expect(out).toMatch(/browser (chrome|html)/);
+    expect(out).toMatch(/^path /m);
+    expect(out).toMatch(/^config /m);
   });
 });

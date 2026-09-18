@@ -11,6 +11,7 @@ import { encodeMessage, extractMessages, type Framing } from "./framing.js";
 import { elicitAskUser, parseElicitationCapabilities } from "./elicitation.js";
 import { createAcpFileIo, hasClientFs, parseClientCapabilities } from "./fs.js";
 import type { NotifyFn, RequestFn } from "./rpc.js";
+import { packageVersion } from "../version.js";
 import { clientTerminalEnabled, createAcpTerminal } from "./terminal.js";
 
 interface RpcRequest {
@@ -339,7 +340,7 @@ export async function dispatch(
           mcpCapabilities: { http: true, sse: false },
           sessionCapabilities: { additionalDirectories: {}, resume: {}, close: {}, list: {}, delete: {} },
         },
-        agentInfo: { name: "agent", version: "0.18.0" },
+        agentInfo: { name: "agent", version: packageVersion() },
         authMethods: [],
       };
     case "authenticate":

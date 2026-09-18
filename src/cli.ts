@@ -3,13 +3,15 @@ import { createInterface } from "node:readline/promises";
 import { stdin as input, stdout as output, stderr } from "node:process";
 import { parseArgs } from "node:util";
 import { loadConfig } from "./config.js";
-import { doctorReport } from "./doctor.js";
+import { completionScript } from "./completion.js";
+import { configReport, doctorReport } from "./doctor.js";
 import { runEvalTarget } from "./eval/run.js";
 import { AgentHost } from "./host.js";
 import { autoApprover, denyApprover } from "./permissions/policy.js";
 import { createProvider } from "./provider/factory.js";
 import { runAcpStdio } from "./protocol/acp.js";
 import type { AskUserFn } from "./runtime.js";
+import { runSelfUpdate, runUninstall } from "./self_update.js";
 import { SessionStore } from "./session/store.js";
 import type { Approver, BrowserMode, LoopEvent, ProviderName, SandboxMode } from "./types.js";
 import { packageVersion } from "./version.js";
@@ -19,6 +21,10 @@ function usage(): string {
        agent acp
        agent eval <file-or-dir>
        agent doctor
+       agent config
+       agent update
+       agent uninstall
+       agent completion bash|zsh|powershell
 
   -p, --print            Run one prompt and exit
   -y, --yes              Auto-approve write/shell/network tools
@@ -38,6 +44,7 @@ function usage(): string {
 Environment: OPENAI_API_KEY, OPENAI_BASE_URL, XAI_API_KEY, ANTHROPIC_API_KEY,
 AGENT_MODEL, AGENT_HOME, AGENT_APPROVAL=ask|auto, AGENT_MODE=default|plan,
 AGENT_ARTIFACTS, AGENT_SANDBOX=auto|none, AGENT_BROWSER=auto|chrome|html, AGENT_CHROME
+User file: ~/.agent/config.json (CLI and env override the file)
 
 Install (macOS/Linux): curl -fsSL https://raw.githubusercontent.com/mengzhihua/agent/main/scripts/install.sh | bash
 Install (Windows):     irm https://raw.githubusercontent.com/mengzhihua/agent/main/scripts/install.ps1 | iex
@@ -66,6 +73,26 @@ async function main(): Promise<void> {
 
   if (process.argv[2] === "doctor") {
     output.write(`${doctorReport()}\n`);
+    return;
+  }
+
+  if (process.argv[2] === "config") {
+    output.write(`${configReport()}\n`);
+    return;
+  }
+
+  if (process.argv[2] === "update") {
+    runSelfUpdate();
+    return;
+  }
+
+  if (process.argv[2] === "uninstall") {
+    runUninstall();
+    return;
+  }
+
+  if (process.argv[2] === "completion") {
+    output.write(completionScript(process.argv[3] ?? ""));
     return;
   }
 
