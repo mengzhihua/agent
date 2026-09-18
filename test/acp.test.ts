@@ -16,6 +16,7 @@ import {
   parseListCursor,
   parseSlashCommand,
   toAcpReplayUpdate,
+  toAcpUpdate,
   contextWindowSize,
   acpUsageUpdate,
 } from "../src/protocol/acp.js";
@@ -74,7 +75,7 @@ describe("ACP-shaped protocol", () => {
         loadSession: true,
         sessionCapabilities: { additionalDirectories: {}, resume: {}, close: {}, list: {}, delete: {} },
       },
-      agentInfo: { name: "agent", version: "0.15.0" },
+      agentInfo: { name: "agent", version: "0.16.0" },
     });
 
     const created = (await dispatch(
@@ -336,6 +337,7 @@ describe("ACP client filesystem", () => {
 
     const files = new Map<string, string>([[diskPath, "hello"]]);
     const methods: string[] = [];
+    const notes: unknown[] = [];
     await dispatch(
       host,
       sessions,
@@ -346,7 +348,7 @@ describe("ACP client filesystem", () => {
         method: "session/prompt",
         params: { sessionId: created.sessionId, prompt: "edit note" },
       },
-      () => undefined,
+      (note) => notes.push(note),
       async (method, params) => {
         methods.push(method);
         const row = params as { path?: string; content?: string };
@@ -361,6 +363,8 @@ describe("ACP client filesystem", () => {
     expect(methods).toEqual(["fs/read_text_file", "fs/write_text_file"]);
     expect(files.get(diskPath)).toBe("hello world");
     expect(fs.readFileSync(diskPath, "utf8")).toBe("hello");
+    expect(JSON.stringify(notes)).toContain('"type":"diff"');
+    expect(JSON.stringify(notes)).toContain("hello world");
     await host.close();
   });
 
@@ -408,6 +412,55 @@ describe("ACP client filesystem", () => {
     );
     expect(methods).toEqual([]);
     expect(JSON.stringify(notes)).toContain("disk only");
+    const abs = path.join(host.config.workspace, "note.txt");
+    expect(JSON.stringify(notes)).toContain(JSON.stringify(abs));
+    await host.close();
+  });
+
+  it("creates a file with a diff whose oldText is null", async () => {
+    const provider = new ScriptedProvider([
+      {
+        toolCalls: [
+          {
+            id: "c1",
+            name: "apply_patch",
+            arguments: { path: "new.txt", new_string: "fresh\n" },
+          },
+        ],
+      },
+      { text: "created" },
+    ]);
+    const host = await hostWith(provider);
+    const abs = path.join(host.config.workspace, "new.txt");
+    const sessions = new Set<string>();
+    const controllers = new Map<string, AbortController>();
+    const created = (await dispatch(
+      host,
+      sessions,
+      controllers,
+      { jsonrpc: "2.0", id: 1, method: "session/new" },
+      () => undefined,
+    )) as { sessionId: string };
+    const notes: unknown[] = [];
+    await dispatch(
+      host,
+      sessions,
+      controllers,
+      {
+        jsonrpc: "2.0",
+        id: 2,
+        method: "session/prompt",
+        params: { sessionId: created.sessionId, prompt: "create file" },
+      },
+      (note) => notes.push(note),
+    );
+    const dumped = JSON.stringify(notes);
+    expect(dumped).toContain('"name":"apply_patch"');
+    expect(dumped).toContain('"type":"diff"');
+    expect(dumped).toContain('"oldText":null');
+    expect(dumped).toContain("fresh\\n");
+    expect(dumped).toContain(JSON.stringify(abs));
+    expect(fs.readFileSync(abs, "utf8")).toBe("fresh\n");
     await host.close();
   });
 });
@@ -673,7 +726,15 @@ describe("ACP session load / resume / close", () => {
         name: "read",
         arguments: { path: "a.ts" },
       }),
-    ).toMatchObject({ sessionUpdate: "tool_call", toolCallId: "c1", kind: "read", status: "in_progress" });
+    ).toMatchObject({
+      sessionUpdate: "tool_call",
+      toolCallId: "c1",
+      name: "read",
+      kind: "read",
+      status: "in_progress",
+      rawInput: { path: "a.ts" },
+      locations: [{ path: "a.ts" }],
+    });
     expect(
       toAcpReplayUpdate({
         type: "tool_result",
@@ -684,6 +745,73 @@ describe("ACP session load / resume / close", () => {
         content: "ok",
       }),
     ).toMatchObject({ sessionUpdate: "tool_call_update", toolCallId: "c1", status: "completed" });
+    expect(
+      toAcpReplayUpdate({
+        type: "tool_result",
+        id: "t2",
+        timestamp: "t",
+        callId: "c1",
+        name: "read",
+        content: "ok",
+      }),
+    ).not.toHaveProperty("locations");
+  });
+
+  it("maps live tool events to name, locations, and diffs", () => {
+    expect(
+      toAcpUpdate({
+        type: "tool-start",
+        callId: "c1",
+        name: "read",
+        arguments: { path: "a.ts", offset: 12 },
+        locations: [{ path: "/ws/a.ts", line: 12 }],
+      }),
+    ).toEqual({
+      sessionUpdate: "tool_call",
+      toolCallId: "c1",
+      title: "read",
+      name: "read",
+      kind: "read",
+      status: "in_progress",
+      rawInput: { path: "a.ts", offset: 12 },
+      locations: [{ path: "/ws/a.ts", line: 12 }],
+    });
+    expect(
+      toAcpUpdate({
+        type: "tool-end",
+        callId: "c1",
+        name: "apply_patch",
+        content: "updated a.ts",
+        locations: [{ path: "/ws/a.ts" }],
+        diff: { path: "/ws/a.ts", oldText: "a", newText: "b" },
+      }),
+    ).toEqual({
+      sessionUpdate: "tool_call_update",
+      toolCallId: "c1",
+      status: "completed",
+      rawOutput: "updated a.ts",
+      locations: [{ path: "/ws/a.ts" }],
+      content: [
+        { type: "content", content: { type: "text", text: "updated a.ts" } },
+        { type: "diff", path: "/ws/a.ts", oldText: "a", newText: "b" },
+      ],
+    });
+    expect(
+      toAcpUpdate({
+        type: "tool-start",
+        callId: "c2",
+        name: "shell",
+        arguments: { command: "echo hi" },
+      }),
+    ).toEqual({
+      sessionUpdate: "tool_call",
+      toolCallId: "c2",
+      title: "shell",
+      name: "shell",
+      kind: "execute",
+      status: "in_progress",
+      rawInput: { command: "echo hi" },
+    });
   });
 
   it("replays history on session/load and returns null", async () => {

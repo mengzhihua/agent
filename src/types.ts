@@ -71,6 +71,19 @@ export interface ToolResult {
   name: string;
   content: string;
   isError?: boolean;
+  locations?: ToolLocation[];
+  diff?: ToolDiff;
+}
+
+export interface ToolLocation {
+  path: string;
+  line?: number;
+}
+
+export interface ToolDiff {
+  path: string;
+  oldText: string | null;
+  newText: string;
 }
 
 export type ModelMessage =
@@ -154,8 +167,16 @@ export type SessionEvent =
 
 export type LoopEvent =
   | { type: "text-delta"; text: string }
-  | { type: "tool-start"; callId: string; name: string; arguments: unknown }
-  | { type: "tool-end"; callId: string; name: string; content: string; isError?: boolean }
+  | { type: "tool-start"; callId: string; name: string; arguments: unknown; locations?: ToolLocation[] }
+  | {
+      type: "tool-end";
+      callId: string;
+      name: string;
+      content: string;
+      isError?: boolean;
+      locations?: ToolLocation[];
+      diff?: ToolDiff;
+    }
   | { type: "permission"; tool: string; decision: "allow" | "deny"; summary: string }
   | { type: "compact-start" }
   | { type: "compact-end"; summary: string }

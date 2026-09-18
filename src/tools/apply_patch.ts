@@ -2,6 +2,13 @@ import { diskFileIo, type FileIo } from "../files/io.js";
 import type { AgentConfig } from "../types.js";
 import { resolveInWorkspace, toWorkspacePath } from "../workspace.js";
 
+export interface ApplyPatchResult {
+  summary: string;
+  absPath: string;
+  oldText: string | null;
+  newText: string;
+}
+
 type Edit = { old_string: string; new_string: string };
 
 function collectEdits(args: Record<string, unknown>): Edit[] {
@@ -33,7 +40,7 @@ export async function applyPatchTool(
   args: Record<string, unknown>,
   io: FileIo = diskFileIo(workspace),
   extraRoots: string[] = [],
-): Promise<string> {
+): Promise<ApplyPatchResult> {
   const abs = resolveInWorkspace(workspace, relPath, extraRoots);
   const edits = collectEdits(args);
   const { content, existed } = await io.readText(relPath);
@@ -44,7 +51,13 @@ export async function applyPatchTool(
     }
     const created = edits.map((edit) => edit.new_string).join("");
     await io.writeText(relPath, created);
-    return `created ${toWorkspacePath(workspace, abs, extraRoots)} (${created.split("\n").length} lines)`;
+    const label = toWorkspacePath(workspace, abs, extraRoots);
+    return {
+      summary: `created ${label} (${created.split("\n").length} lines)`,
+      absPath: abs,
+      oldText: null,
+      newText: created,
+    };
   }
 
   let next = content;
@@ -62,7 +75,12 @@ export async function applyPatchTool(
     next = next.replace(edit.old_string, edit.new_string);
   }
   await io.writeText(relPath, next);
-  return `updated ${toWorkspacePath(workspace, abs, extraRoots)}`;
+  return {
+    summary: `updated ${toWorkspacePath(workspace, abs, extraRoots)}`,
+    absPath: abs,
+    oldText: content,
+    newText: next,
+  };
 }
 
 export function applyPatchDefinition(config: AgentConfig) {

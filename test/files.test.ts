@@ -60,9 +60,10 @@ describe("ACP FileIo", () => {
         throw new Error(method);
       },
     });
-    await expect(applyPatchTool(root, "a.txt", { old_string: "foo", new_string: "bar" }, io)).resolves.toMatch(
-      /updated/,
-    );
+    const patched = await applyPatchTool(root, "a.txt", { old_string: "foo", new_string: "bar" }, io);
+    expect(patched.summary).toMatch(/updated/);
+    expect(patched.oldText).toBe("foo");
+    expect(patched.newText).toBe("bar");
     expect(written).toBe("bar");
     expect(fs.readFileSync(diskPath, "utf8")).toBe("foo");
   });

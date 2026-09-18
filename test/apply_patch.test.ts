@@ -12,7 +12,10 @@ describe("apply_patch", () => {
   it("creates a new file", async () => {
     const root = tmpWorkspace();
     const result = await applyPatchTool(root, "hello.txt", { new_string: "hi\n" });
-    expect(result).toMatch(/created/);
+    expect(result.summary).toMatch(/created/);
+    expect(result.oldText).toBeNull();
+    expect(result.newText).toBe("hi\n");
+    expect(result.absPath).toBe(path.join(root, "hello.txt"));
     expect(fs.readFileSync(path.join(root, "hello.txt"), "utf8")).toBe("hi\n");
   });
 
@@ -21,7 +24,7 @@ describe("apply_patch", () => {
     fs.writeFileSync(path.join(root, "a.txt"), "foo bar foo");
     await expect(
       applyPatchTool(root, "a.txt", { old_string: "foo bar foo", new_string: "baz" }),
-    ).resolves.toMatch(/updated/);
+    ).resolves.toMatchObject({ summary: expect.stringMatching(/updated/), oldText: "foo bar foo", newText: "baz" });
     expect(fs.readFileSync(path.join(root, "a.txt"), "utf8")).toBe("baz");
   });
 
