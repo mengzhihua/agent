@@ -2,6 +2,7 @@ import { spawn } from "node:child_process";
 import fs from "node:fs";
 import fsp from "node:fs/promises";
 import path from "node:path";
+import { agentIgnoreFile, loadIgnoreMatcher, RG_SKIP_GLOBS, type IgnoreMatcher } from "../ignore.js";
 import { whichProgram } from "../platform.js";
 import type { AgentConfig } from "../types.js";
 import { resolveInWorkspace, toWorkspacePath, truncate } from "../workspace.js";
@@ -20,7 +21,10 @@ async function runRg(
   maxMatches: number,
   signal: AbortSignal,
 ): Promise<string> {
-  const args = ["-n", "--hidden", "--glob", "!.git", "--max-count", String(maxMatches), pattern, searchPath];
+  const args = ["-n", "--hidden", "--max-count", String(maxMatches), pattern, searchPath];
+  for (const skip of RG_SKIP_GLOBS) args.push("--glob", skip);
+  const ignoreFile = agentIgnoreFile(workspace);
+  if (ignoreFile) args.push("--ignore-file", ignoreFile);
   if (glob) args.splice(1, 0, "--glob", glob);
   return await new Promise((resolve, reject) => {
     const child = spawn(bin, args, { cwd: workspace, signal });
@@ -47,6 +51,7 @@ async function walkGrep(
   globFilter: string | undefined,
   maxMatches: number,
   extraRoots: string[] = [],
+  matcher: IgnoreMatcher,
 ): Promise<string> {
   const regex = new RegExp(pattern);
   const hits: string[] = [];
@@ -54,12 +59,14 @@ async function walkGrep(
     const entries = await fsp.readdir(dir, { withFileTypes: true });
     for (const entry of entries) {
       if (hits.length >= maxMatches) return;
-      if (entry.name === ".git" || entry.name === "node_modules") continue;
       const abs = path.join(dir, entry.name);
+      const rel = toWorkspacePath(root, abs);
       if (entry.isDirectory()) {
+        if (matcher.ignoresDir(rel)) continue;
         await walk(abs);
         continue;
       }
+      if (matcher.ignores(rel, false)) continue;
       if (globFilter && !entry.name.includes(globFilter.replace(/^\*\./, ".").replace("*", ""))) {
         // best-effort fallback; rg path is preferred
       }
@@ -91,17 +98,18 @@ export async function grepTool(
   extraRoots: string[] = [],
 ): Promise<string> {
   const root = relPath ? resolveInWorkspace(workspace, relPath, extraRoots) : resolveInWorkspace(workspace, ".", extraRoots);
+  const matcher = loadIgnoreMatcher(workspace);
   const bin = rgBin();
   const output = bin
     ? await runRg(bin, workspace, pattern, root, glob, maxMatches, signal)
-    : await walkGrep(workspace, root, pattern, glob, maxMatches, extraRoots);
+    : await walkGrep(workspace, root, pattern, glob, maxMatches, extraRoots, matcher);
   return truncate(output, 64 * 1024);
 }
 
 export function grepDefinition(config: AgentConfig) {
   return {
     name: "grep",
-    description: `Search file contents in ${config.workspace} with a regex. Returns path:line:content.`,
+    description: `Search file contents in ${config.workspace} with a regex. Skips gitignore, .agentignore, and common build directories. Returns path:line:content.`,
     risk: "read" as const,
     parameters: {
       type: "object" as const,

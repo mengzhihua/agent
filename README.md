@@ -2,7 +2,7 @@
 
 通用 agent 软件：一个极简的模型–工具循环，外面套 harness。
 
-当前进度：**期 18 — 安装进 PATH、自更新与用户配置**。
+当前进度：**期 19 — 忽略规则、Git 环境与项目初始化**。
 
 - [行业研究](docs/industry-agent-research.md) — Codex、Claude Code、Grok Build、Devin、Cursor、Gemini CLI、Manus、OpenHands 等怎么做，以及通用 harness 的收敛形态
 - [期 0](docs/phase-0.md)
@@ -24,6 +24,7 @@
 - [期 16](docs/phase-16.md)
 - [期 17](docs/phase-17.md)
 - [期 18](docs/phase-18.md)
+- [期 19](docs/phase-19.md)
 
 ## 研究结论（极简）
 
@@ -81,8 +82,9 @@ agent --browser chrome -y -p "Open a page and screenshot"
 agent --list
 agent --resume <id> -p "continue"
 agent acp             # JSON-RPC（NDJSON 或 Content-Length；ask 时向客户端要权限；fs/terminal/MCP 走编辑器）
-agent doctor          # 检查 node / sandbox / 浏览器 / PATH / 配置
+agent doctor          # 检查 node / sandbox / 浏览器 / PATH / 配置 / git
 agent config          # 打印生效配置
+agent init            # 生成 AGENTS.md、.agentignore、.agent/
 agent update          # 重跑一键安装
 agent uninstall       # 移除 shim 和 PATH
 agent completion bash # 输出 bash 补全
@@ -103,7 +105,8 @@ MCP 工具以 `mcp__<server>__<tool>` 接在后面。
 
 | 文件 | 作用 |
 | --- | --- |
-| `AGENTS.md` | 项目说明，注入 system prompt |
+| `AGENTS.md` | 项目说明，注入 system prompt（也会读父目录和 `~/.agent/AGENTS.md`） |
+| `.agentignore` | grep/glob 额外忽略（gitignore 语法；`.gitignore` 同样生效） |
 | `.agent/skills/*/SKILL.md` | 按需加载的技能 |
 | `.agent/mcp.json` | MCP 服务器 |
 | `.agent/hooks.json` | PreToolUse / PostToolUse / Stop |

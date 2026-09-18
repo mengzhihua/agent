@@ -187,4 +187,26 @@ describe("agent loop", () => {
     const { events } = await collect(store, "m1", "loop", provider, workspace, { maxToolIterations: 2 });
     expect(events.some((event) => event.type === "error")).toBe(true);
   });
+
+  it("runs consecutive read tools from one model turn", async () => {
+    const workspace = await fsp.mkdtemp(path.join(os.tmpdir(), "agent-par-"));
+    await fsp.writeFile(path.join(workspace, "a.txt"), "alpha\n");
+    await fsp.writeFile(path.join(workspace, "b.txt"), "beta\n");
+    const store = new SessionStore(fs.mkdtempSync(path.join(os.tmpdir(), "agent-par-sess-")));
+    const provider = new ScriptedProvider([
+      {
+        toolCalls: [
+          { id: "c1", name: "read", arguments: { path: "a.txt" } },
+          { id: "c2", name: "read", arguments: { path: "b.txt" } },
+        ],
+      },
+      { text: "both files read" },
+    ]);
+    const { events } = await collect(store, "p1", "read both", provider, workspace);
+    const reads = events.filter((event) => event.type === "tool-end" && event.name === "read");
+    expect(reads).toHaveLength(2);
+    expect(reads.some((event) => event.type === "tool-end" && event.content.includes("alpha"))).toBe(true);
+    expect(reads.some((event) => event.type === "tool-end" && event.content.includes("beta"))).toBe(true);
+    expect(events.some((event) => event.type === "turn-end")).toBe(true);
+  });
 });

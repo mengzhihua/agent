@@ -67,7 +67,13 @@ export function createBuiltinTools(config: AgentConfig, options: RegistryOptions
     {
       definition: globDefinition(config),
       execute: async (args, ctx) =>
-        globTool(workspaceOf(ctx), asString(args, "pattern"), typeof args.path === "string" ? args.path : undefined, extraRootsOf(ctx)),
+        globTool(
+          workspaceOf(ctx),
+          asString(args, "pattern"),
+          typeof args.path === "string" ? args.path : undefined,
+          extraRootsOf(ctx),
+          ctx.signal,
+        ),
     },
     {
       definition: applyPatchDefinition(config),
