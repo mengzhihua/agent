@@ -133,6 +133,15 @@ export class AgentHost {
     await runtime.mcp?.close();
   }
 
+  extraRootsFor(sessionId: string): string[] {
+    return this.runtimes.get(sessionId)?.extraRoots ?? [];
+  }
+
+  async deleteSession(sessionId: string): Promise<void> {
+    await this.closeSession(sessionId);
+    this.store.delete(sessionId);
+  }
+
   async *prompt(sessionId: string, userText: string, signal: AbortSignal): AsyncGenerator<LoopEvent> {
     const runtime = this.runtimeFor(sessionId);
     yield* runTurn({

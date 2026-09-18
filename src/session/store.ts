@@ -40,22 +40,29 @@ export class SessionStore {
       .map((line) => JSON.parse(line) as SessionEvent);
   }
 
-  list(): { id: string; timestamp: string; cwd: string; model: string }[] {
+  delete(sessionId: string): void {
+    const file = this.pathFor(sessionId);
+    if (fs.existsSync(file)) fs.unlinkSync(file);
+  }
+
+  list(): SessionListRow[] {
     ensureDir(this.dir);
     const files = fs.readdirSync(this.dir).filter((name) => name.endsWith(".jsonl"));
-    const rows = [];
+    const rows: SessionListRow[] = [];
     for (const file of files) {
       const id = file.slice(0, -".jsonl".length);
       try {
         const events = this.read(id);
         const meta = events.find((event) => event.type === "session_meta");
         const last = events.at(-1);
+        const firstUser = events.find((event) => event.type === "user");
         if (meta && meta.type === "session_meta") {
           rows.push({
             id,
             timestamp: last?.timestamp ?? meta.timestamp,
             cwd: meta.cwd,
             model: meta.model,
+            title: firstUser && firstUser.type === "user" ? sessionTitle(firstUser.text) : undefined,
           });
         }
       } catch {
@@ -64,4 +71,18 @@ export class SessionStore {
     }
     return rows.sort((a, b) => b.timestamp.localeCompare(a.timestamp));
   }
+}
+
+export interface SessionListRow {
+  id: string;
+  timestamp: string;
+  cwd: string;
+  model: string;
+  title?: string;
+}
+
+export function sessionTitle(text: string): string {
+  const line = text.trim().split(/\r?\n/, 1)[0] ?? "";
+  if (line.length <= 80) return line;
+  return `${line.slice(0, 79)}…`;
 }
