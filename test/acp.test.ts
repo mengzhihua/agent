@@ -23,6 +23,11 @@ import {
 import { parseAcpMcpServers } from "../src/protocol/mcp.js";
 import { parseClientCapabilities } from "../src/protocol/fs.js";
 import { clientTerminalEnabled } from "../src/protocol/terminal.js";
+import {
+  askUserSchema,
+  parseElicitationCapabilities,
+  parseElicitationResult,
+} from "../src/protocol/elicitation.js";
 import { encodeMessage, extractMessages } from "../src/protocol/framing.js";
 import { ScriptedProvider } from "../src/provider/scripted.js";
 import { SessionStore } from "../src/session/store.js";
@@ -75,7 +80,7 @@ describe("ACP-shaped protocol", () => {
         loadSession: true,
         sessionCapabilities: { additionalDirectories: {}, resume: {}, close: {}, list: {}, delete: {} },
       },
-      agentInfo: { name: "agent", version: "0.16.0" },
+      agentInfo: { name: "agent", version: "0.17.0" },
     });
 
     const created = (await dispatch(
@@ -211,6 +216,162 @@ describe("bindAcpApprover", () => {
     const host = await hostWith(new ScriptedProvider([{ text: "x" }]));
     bindAcpApprover(host, "s1", async () => ({ outcome: { outcome: "selected", optionId: "allow-once" } }));
     expect(await host.approver({ tool: "shell", risk: "exec", arguments: {}, summary: "shell: ls" })).toBe("allow");
+    await host.close();
+  });
+});
+
+describe("ACP elicitation", () => {
+  it("parses initialize clientCapabilities.elicitation", () => {
+    expect(parseElicitationCapabilities(undefined)).toEqual({ form: false, url: false });
+    expect(parseElicitationCapabilities({ clientCapabilities: { elicitation: {} } })).toEqual({
+      form: false,
+      url: false,
+    });
+    expect(
+      parseElicitationCapabilities({ clientCapabilities: { elicitation: { form: {}, url: null } } }),
+    ).toEqual({ form: true, url: false });
+    expect(
+      parseElicitationCapabilities({ clientCapabilities: { elicitation: { form: {}, url: {} } } }),
+    ).toEqual({ form: true, url: true });
+  });
+
+  it("builds a form schema for free text or choices", () => {
+    expect(askUserSchema()).toMatchObject({
+      type: "object",
+      required: ["answer"],
+      properties: { answer: { type: "string", minLength: 1 } },
+    });
+    expect(askUserSchema(["red", "blue"])).toMatchObject({
+      properties: { answer: { enum: ["red", "blue"] } },
+    });
+  });
+
+  it("parses accept, decline, and cancel", () => {
+    expect(parseElicitationResult({ action: "accept", content: { answer: "yes" } })).toEqual({
+      action: "accept",
+      content: { answer: "yes" },
+    });
+    expect(parseElicitationResult({ action: "decline" }).action).toBe("decline");
+    expect(parseElicitationResult({ action: "cancel" }).action).toBe("cancel");
+    expect(parseElicitationResult(undefined).action).toBe("cancel");
+  });
+
+  it("asks through elicitation/create when the client advertises form", async () => {
+    const provider = new ScriptedProvider([
+      { toolCalls: [{ id: "c1", name: "ask_user", arguments: { question: "Ship it?", choices: ["yes", "no"] } }] },
+      { text: "got it" },
+    ]);
+    const host = await hostWith(provider);
+    const sessions = new Set<string>();
+    const controllers = new Map<string, AbortController>();
+    const methods: string[] = [];
+    const payloads: unknown[] = [];
+    await dispatch(
+      host,
+      sessions,
+      controllers,
+      {
+        jsonrpc: "2.0",
+        id: 1,
+        method: "initialize",
+        params: { protocolVersion: 1, clientCapabilities: { elicitation: { form: {} } } },
+      },
+      () => undefined,
+    );
+    expect(host.clientElicitation).toEqual({ form: true, url: false });
+    const created = (await dispatch(
+      host,
+      sessions,
+      controllers,
+      { jsonrpc: "2.0", id: 2, method: "session/new" },
+      () => undefined,
+    )) as { sessionId: string };
+    const notes: unknown[] = [];
+    await dispatch(
+      host,
+      sessions,
+      controllers,
+      {
+        jsonrpc: "2.0",
+        id: 3,
+        method: "session/prompt",
+        params: { sessionId: created.sessionId, prompt: "ask" },
+      },
+      (note) => notes.push(note),
+      async (method, params) => {
+        methods.push(method);
+        payloads.push(params);
+        expect(method).toBe("elicitation/create");
+        expect(params).toMatchObject({
+          sessionId: created.sessionId,
+          toolCallId: "c1",
+          mode: "form",
+          message: "Ship it?",
+        });
+        return { action: "accept", content: { answer: "yes" } };
+      },
+    );
+    expect(methods).toEqual(["elicitation/create"]);
+    expect(JSON.stringify(notes)).toContain("User: yes");
+    expect(JSON.stringify(payloads)).not.toContain("session/request_permission");
+    await host.close();
+  });
+
+  it("falls back to request_permission without form support", async () => {
+    const host = await hostWith(new ScriptedProvider([{ text: "x" }]));
+    const methods: string[] = [];
+    bindAcpApprover(host, "s1", async (method, params) => {
+      methods.push(method);
+      expect(params).toMatchObject({ sessionId: "s1" });
+      return { outcome: { outcome: "selected", optionId: "allow-once" } };
+    });
+    expect(await host.askUser?.({ question: "Continue?" })).toBe("Continue");
+    expect(methods).toEqual(["session/request_permission"]);
+    await host.close();
+  });
+
+  it("turns decline into a failed ask_user", async () => {
+    const provider = new ScriptedProvider([
+      { toolCalls: [{ id: "c1", name: "ask_user", arguments: { question: "Ship it?" } }] },
+      { text: "stopped" },
+    ]);
+    const host = await hostWith(provider);
+    const sessions = new Set<string>();
+    const controllers = new Map<string, AbortController>();
+    await dispatch(
+      host,
+      sessions,
+      controllers,
+      {
+        jsonrpc: "2.0",
+        id: 1,
+        method: "initialize",
+        params: { protocolVersion: 1, clientCapabilities: { elicitation: { form: {} } } },
+      },
+      () => undefined,
+    );
+    const created = (await dispatch(
+      host,
+      sessions,
+      controllers,
+      { jsonrpc: "2.0", id: 2, method: "session/new" },
+      () => undefined,
+    )) as { sessionId: string };
+    const notes: unknown[] = [];
+    await dispatch(
+      host,
+      sessions,
+      controllers,
+      {
+        jsonrpc: "2.0",
+        id: 3,
+        method: "session/prompt",
+        params: { sessionId: created.sessionId, prompt: "ask" },
+      },
+      (note) => notes.push(note),
+      async () => ({ action: "decline" }),
+    );
+    expect(JSON.stringify(notes)).toContain("User declined the question");
     await host.close();
   });
 });

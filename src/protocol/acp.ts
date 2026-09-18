@@ -8,6 +8,7 @@ import type { AgentConfig, ApprovalMode, ApprovalRequest, LoopEvent, Risk, RunMo
 import { locationsFromToolArgs } from "../tools/types.js";
 import { estimateTokens } from "../workspace.js";
 import { encodeMessage, extractMessages, type Framing } from "./framing.js";
+import { elicitAskUser, parseElicitationCapabilities } from "./elicitation.js";
 import { createAcpFileIo, hasClientFs, parseClientCapabilities } from "./fs.js";
 import type { NotifyFn, RequestFn } from "./rpc.js";
 import { clientTerminalEnabled, createAcpTerminal } from "./terminal.js";
@@ -200,10 +201,11 @@ export function bindAcpApprover(host: AgentHost, sessionId: string, request: Req
     });
     return parsePermissionOutcome(raw);
   };
-  host.askUser = async ({ question, choices }) => {
+  host.askUser = async (input) => {
+    if (host.clientElicitation.form) return elicitAskUser(sessionId, request, input);
     const options =
-      choices?.length && choices.length > 0
-        ? choices.map((choice, i) => ({
+      input.choices?.length && input.choices.length > 0
+        ? input.choices.map((choice, i) => ({
             optionId: `allow-choice-${i}`,
             name: choice,
             kind: "allow_once" as const,
@@ -215,8 +217,8 @@ export function bindAcpApprover(host: AgentHost, sessionId: string, request: Req
     const raw = await request("session/request_permission", {
       sessionId,
       toolCall: {
-        toolCallId: "ask_user",
-        title: question,
+        toolCallId: input.callId ?? "ask_user",
+        title: input.question,
         kind: "other",
         status: "pending",
       },
@@ -328,6 +330,7 @@ export async function dispatch(
     case "initialize":
       host.clientFs = parseClientCapabilities(req.params);
       host.clientTerminal = clientTerminalEnabled(req.params);
+      host.clientElicitation = parseElicitationCapabilities(req.params);
       return {
         protocolVersion: ACP_PROTOCOL_VERSION,
         agentCapabilities: {
@@ -336,7 +339,7 @@ export async function dispatch(
           mcpCapabilities: { http: true, sse: false },
           sessionCapabilities: { additionalDirectories: {}, resume: {}, close: {}, list: {}, delete: {} },
         },
-        agentInfo: { name: "agent", version: "0.16.0" },
+        agentInfo: { name: "agent", version: "0.17.0" },
         authMethods: [],
       };
     case "authenticate":

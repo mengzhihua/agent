@@ -10,6 +10,7 @@ import type { ToolRegistry } from "./tools/registry.js";
 export interface AskUserRequest {
   question: string;
   choices?: string[];
+  callId?: string;
 }
 
 export type AskUserFn = (request: AskUserRequest) => Promise<string>;

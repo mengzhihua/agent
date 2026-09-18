@@ -8,6 +8,7 @@ import { newSessionId, nowIso } from "./ids.js";
 import { runTurn } from "./loop/agent-loop.js";
 import { McpManager } from "./mcp/manager.js";
 import { autoApprover } from "./permissions/policy.js";
+import type { ClientElicitationCaps } from "./protocol/elicitation.js";
 import type { ClientFsCaps } from "./protocol/fs.js";
 import { parseAcpMcpServers } from "./protocol/mcp.js";
 import { createSessionRuntime, type AskUserFn, type SessionRuntime } from "./runtime.js";
@@ -24,6 +25,7 @@ export class AgentHost {
   askUser?: AskUserFn;
   clientFs: ClientFsCaps = { readTextFile: false, writeTextFile: false };
   clientTerminal = false;
+  clientElicitation: ClientElicitationCaps = { form: false, url: false };
   private readonly artifacts: ArtifactStore;
   private readonly runtimes = new Map<string, SessionRuntime>();
 

@@ -64,6 +64,7 @@ export function browserTool(config: AgentConfig): ToolHandler {
         }
         const answer = await ctx.runtime.askUser({
           question: `Take over the browser for ${url}. Finish login/captcha/payment, then tell me when I can continue.`,
+          callId: ctx.callId,
         });
         try {
           await browser.open(url, ctx.signal);

@@ -11,7 +11,7 @@
 3. 实时 `tool_call` 补上 `name` 和 `rawInput`；replay 从参数恢复相对路径 locations
 4. `applyPatchTool` 返回 `{ summary, absPath, oldText, newText }`，registry 再映射成工具结果
 
-不做（以后）：SSE 传输、Docker workspace、云端 VM、Playwright 包、累计 cost、布尔 config、图片 prompt。
+不做（以后）：SSE 传输、Docker workspace、云端 VM、Playwright 包、累计 cost、布尔 config、图片 prompt。Elicitation 见 [期 16](phase-16.md)。
 
 ## 怎么跑
 
