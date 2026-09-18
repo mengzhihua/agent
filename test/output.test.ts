@@ -3,7 +3,10 @@ import {
   collectJsonResult,
   encodeJsonResult,
   encodeStreamLine,
+  formatEvalResults,
+  formatSessionDelete,
   formatSessionList,
+  formatSessionShow,
   parseOutputFormat,
 } from "../src/output.js";
 import type { LoopEvent } from "../src/types.js";
@@ -64,5 +67,49 @@ describe("output format", () => {
         "text",
       ),
     ).toContain("s1");
+  });
+
+  it("formats session inspect, export, and delete", () => {
+    const session = {
+      id: "s1",
+      timestamp: "t",
+      cwd: "/tmp",
+      model: "m",
+      provider: "scripted",
+      title: "hello",
+      events: [
+        {
+          type: "session_meta" as const,
+          id: "s1",
+          timestamp: "t",
+          cwd: "/tmp",
+          model: "m",
+          provider: "scripted",
+        },
+        { type: "user" as const, id: "u1", timestamp: "t", text: "hello" },
+      ],
+    };
+    expect(formatSessionShow(session, "text")).toContain("user  t");
+    expect(JSON.parse(formatSessionShow(session, "json"))).toMatchObject({ id: "s1", title: "hello" });
+    expect(formatSessionDelete("s1", "text")).toBe("Deleted s1");
+    expect(JSON.parse(formatSessionDelete("s1", "json"))).toEqual({ id: "s1", deleted: true });
+  });
+
+  it("encodes eval results as a machine-readable report", () => {
+    const rendered = formatEvalResults(
+      [
+        { name: "ok", ok: true, outputs: [] },
+        { name: "bad", ok: false, error: "boom", outputs: [] },
+      ],
+      "text",
+    );
+    expect(rendered.stdout).toBe("PASS  ok");
+    expect(rendered.stderr).toBe("FAIL  bad: boom");
+    expect(JSON.parse(formatEvalResults([{ name: "ok", ok: true, outputs: [] }], "json").stdout)).toEqual({
+      type: "eval",
+      passed: 1,
+      failed: 0,
+      results: [{ name: "ok", ok: true, outputs: [] }],
+    });
   });
 });

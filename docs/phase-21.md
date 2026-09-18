@@ -13,7 +13,7 @@
 5. `--list --output-format json` 输出会话数组
 6. print 模式下 turn 报错或 aborted 时退出码为 1
 
-不做：OAuth、SSE 传输、布尔 ACP config、累计 cost、图片 prompt、Docker workspace、云端 VM、Playwright、npm 公有源、单文件原生二进制。
+不做：OAuth、SSE 传输、布尔 ACP config、累计 cost、图片 prompt、Docker workspace、云端 VM、Playwright、npm 公有源、单文件原生二进制。会话子命令与 eval JSON 见 [期 22](phase-22.md)。
 
 ## 怎么跑
 
