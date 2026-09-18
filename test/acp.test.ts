@@ -16,6 +16,8 @@ import {
   parseListCursor,
   parseSlashCommand,
   toAcpReplayUpdate,
+  contextWindowSize,
+  acpUsageUpdate,
 } from "../src/protocol/acp.js";
 import { parseAcpMcpServers } from "../src/protocol/mcp.js";
 import { parseClientCapabilities } from "../src/protocol/fs.js";
@@ -72,7 +74,7 @@ describe("ACP-shaped protocol", () => {
         loadSession: true,
         sessionCapabilities: { additionalDirectories: {}, resume: {}, close: {}, list: {}, delete: {} },
       },
-      agentInfo: { name: "agent", version: "0.14.0" },
+      agentInfo: { name: "agent", version: "0.15.0" },
     });
 
     const created = (await dispatch(
@@ -1249,6 +1251,95 @@ describe("ACP session config options", () => {
     expect(host.config.runMode).toBe("plan");
     expect(JSON.stringify(notes)).toContain("config_option_update");
     expect(JSON.stringify(notes)).toContain('"currentValue":"plan"');
+    await host.close();
+  });
+});
+
+describe("ACP usage updates", () => {
+  it("picks a context window from the model id", () => {
+    expect(contextWindowSize("claude-sonnet-4-5", 100_000)).toBe(200_000);
+    expect(contextWindowSize("grok-4", 100_000)).toBe(256_000);
+    expect(contextWindowSize("gpt-4.1", 100_000)).toBe(1_047_576);
+    expect(contextWindowSize("mystery", 100_000)).toBe(128_000);
+  });
+
+  it("notifies usage_update on session/new and after a prompt", async () => {
+    const host = await hostWith(new ScriptedProvider([{ text: "hello from acp" }]));
+    const sessions = new Set<string>();
+    const controllers = new Map<string, AbortController>();
+    const createdNotes: unknown[] = [];
+    const created = (await dispatch(
+      host,
+      sessions,
+      controllers,
+      { jsonrpc: "2.0", id: 1, method: "session/new" },
+      (note) => createdNotes.push(note),
+    )) as { sessionId: string };
+    const createdUsage = createdNotes.find(
+      (note) => (note as { update?: { sessionUpdate?: string } }).update?.sessionUpdate === "usage_update",
+    ) as { update: { used: number; size: number } };
+    expect(createdUsage.update.used).toBe(0);
+    expect(createdUsage.update.size).toBe(contextWindowSize(host.config.model, host.config.compactTokens));
+
+    const promptNotes: unknown[] = [];
+    await dispatch(
+      host,
+      sessions,
+      controllers,
+      {
+        jsonrpc: "2.0",
+        id: 2,
+        method: "session/prompt",
+        params: { sessionId: created.sessionId, prompt: "hi there" },
+      },
+      (note) => promptNotes.push(note),
+    );
+    const promptUsage = promptNotes.find(
+      (note) => (note as { update?: { sessionUpdate?: string } }).update?.sessionUpdate === "usage_update",
+    ) as { update: { used: number; size: number } };
+    expect(promptUsage.update.used).toBeGreaterThan(0);
+    expect(promptUsage.update.size).toBe(createdUsage.update.size);
+    expect(acpUsageUpdate(host, created.sessionId).used).toBe(promptUsage.update.used);
+    await host.close();
+  });
+
+  it("sends usage_update after resume without replaying history", async () => {
+    const host = await hostWith(new ScriptedProvider([{ text: "first" }, { text: "second" }]));
+    const sessions = new Set<string>();
+    const controllers = new Map<string, AbortController>();
+    const created = (await dispatch(
+      host,
+      sessions,
+      controllers,
+      { jsonrpc: "2.0", id: 1, method: "session/new" },
+      () => undefined,
+    )) as { sessionId: string };
+    await dispatch(
+      host,
+      sessions,
+      controllers,
+      {
+        jsonrpc: "2.0",
+        id: 2,
+        method: "session/prompt",
+        params: { sessionId: created.sessionId, prompt: "hi" },
+      },
+      () => undefined,
+    );
+    const notes: unknown[] = [];
+    await dispatch(
+      host,
+      sessions,
+      controllers,
+      { jsonrpc: "2.0", id: 3, method: "session/resume", params: { sessionId: created.sessionId } },
+      (note) => notes.push(note),
+    );
+    expect(JSON.stringify(notes)).toContain("usage_update");
+    expect(JSON.stringify(notes)).not.toContain("user_message_chunk");
+    const usage = notes.find(
+      (note) => (note as { update?: { sessionUpdate?: string } }).update?.sessionUpdate === "usage_update",
+    ) as { update: { used: number } };
+    expect(usage.update.used).toBeGreaterThan(0);
     await host.close();
   });
 });
