@@ -12,7 +12,7 @@
 4. 带上 `sessionId` 和 `toolCallId`
 5. 未声明 form 时保持原来的权限选项兜底
 
-不做：URL mode（OAuth / 密钥）、把 MCP 服务器的 elicitation 转发给编辑器、SSE、Docker workspace、云端 VM、Playwright、累计 cost、布尔 config、图片 prompt。
+不做：URL mode（OAuth / 密钥）、把 MCP 服务器的 elicitation 转发给编辑器、SSE、Docker workspace、云端 VM、Playwright、累计 cost、布尔 config、图片 prompt。跨平台安装见 [期 17](phase-17.md)。
 
 ## 怎么跑
 

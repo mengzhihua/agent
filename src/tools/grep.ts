@@ -2,18 +2,17 @@ import { spawn } from "node:child_process";
 import fs from "node:fs";
 import fsp from "node:fs/promises";
 import path from "node:path";
+import { whichProgram } from "../platform.js";
 import type { AgentConfig } from "../types.js";
 import { resolveInWorkspace, toWorkspacePath, truncate } from "../workspace.js";
 
-function hasRipgrep(): boolean {
-  return fs.existsSync("/exec-daemon/rg") || fs.existsSync("/usr/bin/rg");
-}
-
-function rgBin(): string {
-  return fs.existsSync("/exec-daemon/rg") ? "/exec-daemon/rg" : "rg";
+function rgBin(): string | undefined {
+  if (fs.existsSync("/exec-daemon/rg")) return "/exec-daemon/rg";
+  return whichProgram("rg");
 }
 
 async function runRg(
+  bin: string,
   workspace: string,
   pattern: string,
   searchPath: string,
@@ -23,7 +22,6 @@ async function runRg(
 ): Promise<string> {
   const args = ["-n", "--hidden", "--glob", "!.git", "--max-count", String(maxMatches), pattern, searchPath];
   if (glob) args.splice(1, 0, "--glob", glob);
-  const bin = rgBin();
   return await new Promise((resolve, reject) => {
     const child = spawn(bin, args, { cwd: workspace, signal });
     let stdout = "";
@@ -93,8 +91,9 @@ export async function grepTool(
   extraRoots: string[] = [],
 ): Promise<string> {
   const root = relPath ? resolveInWorkspace(workspace, relPath, extraRoots) : resolveInWorkspace(workspace, ".", extraRoots);
-  const output = hasRipgrep()
-    ? await runRg(workspace, pattern, root, glob, maxMatches, signal)
+  const bin = rgBin();
+  const output = bin
+    ? await runRg(bin, workspace, pattern, root, glob, maxMatches, signal)
     : await walkGrep(workspace, root, pattern, glob, maxMatches, extraRoots);
   return truncate(output, 64 * 1024);
 }

@@ -80,7 +80,7 @@ describe("ACP-shaped protocol", () => {
         loadSession: true,
         sessionCapabilities: { additionalDirectories: {}, resume: {}, close: {}, list: {}, delete: {} },
       },
-      agentInfo: { name: "agent", version: "0.17.0" },
+      agentInfo: { name: "agent", version: "0.18.0" },
     });
 
     const created = (await dispatch(

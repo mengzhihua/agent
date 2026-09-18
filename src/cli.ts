@@ -3,6 +3,7 @@ import { createInterface } from "node:readline/promises";
 import { stdin as input, stdout as output, stderr } from "node:process";
 import { parseArgs } from "node:util";
 import { loadConfig } from "./config.js";
+import { doctorReport } from "./doctor.js";
 import { runEvalTarget } from "./eval/run.js";
 import { AgentHost } from "./host.js";
 import { autoApprover, denyApprover } from "./permissions/policy.js";
@@ -11,11 +12,13 @@ import { runAcpStdio } from "./protocol/acp.js";
 import type { AskUserFn } from "./runtime.js";
 import { SessionStore } from "./session/store.js";
 import type { Approver, BrowserMode, LoopEvent, ProviderName, SandboxMode } from "./types.js";
+import { packageVersion } from "./version.js";
 
 function usage(): string {
   return `Usage: agent [options] [prompt]
        agent acp
        agent eval <file-or-dir>
+       agent doctor
 
   -p, --print            Run one prompt and exit
   -y, --yes              Auto-approve write/shell/network tools
@@ -29,16 +32,21 @@ function usage(): string {
   --sandbox <mode>       auto (default) | none
   --browser <mode>       auto (Chrome if installed) | chrome | html
   --no-mcp               Do not start MCP servers
+  -V, --version          Print version
   -h, --help             Show help
 
 Environment: OPENAI_API_KEY, OPENAI_BASE_URL, XAI_API_KEY, ANTHROPIC_API_KEY,
 AGENT_MODEL, AGENT_HOME, AGENT_APPROVAL=ask|auto, AGENT_MODE=default|plan,
 AGENT_ARTIFACTS, AGENT_SANDBOX=auto|none, AGENT_BROWSER=auto|chrome|html, AGENT_CHROME
 
+Install (macOS/Linux): curl -fsSL https://raw.githubusercontent.com/mengzhihua/agent/main/scripts/install.sh | bash
+Install (Windows):     irm https://raw.githubusercontent.com/mengzhihua/agent/main/scripts/install.ps1 | iex
+
 Project files: AGENTS.md, .agent/skills/*/SKILL.md, .agent/mcp.json, .agent/hooks.json
 Deliverables land in <workspace>/artifacts (or AGENT_ARTIFACTS).
-Shell is OS-sandboxed with bubblewrap when AGENT_SANDBOX=auto and bwrap is installed.
-Browser uses headless Chrome via CDP when found, otherwise static HTML fetch.
+Shell is OS-sandboxed with bubblewrap on Linux when AGENT_SANDBOX=auto and bwrap is installed.
+On macOS/Windows, sandbox stays none unless a Linux bwrap backend is present.
+Browser uses headless Chrome/Edge via CDP when found, otherwise static HTML fetch.
 `;
 }
 
@@ -53,6 +61,11 @@ async function main(): Promise<void> {
       config.approvalMode === "auto" ? autoApprover() : denyApprover(),
     );
     await runAcpStdio(host);
+    return;
+  }
+
+  if (process.argv[2] === "doctor") {
+    output.write(`${doctorReport()}\n`);
     return;
   }
 
@@ -88,12 +101,18 @@ async function main(): Promise<void> {
       sandbox: { type: "string" },
       browser: { type: "string" },
       "no-mcp": { type: "boolean", default: false },
+      version: { type: "boolean", short: "V", default: false },
       help: { type: "boolean", short: "h", default: false },
     },
   });
 
   if (values.help) {
     console.log(usage());
+    return;
+  }
+
+  if (values.version) {
+    console.log(packageVersion());
     return;
   }
 

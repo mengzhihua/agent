@@ -2,6 +2,7 @@ const SECRET_NAME = /key|token|secret|password|credential|passwd/i;
 
 const KEEP = new Set([
   "PATH",
+  "Path",
   "HOME",
   "USER",
   "LOGNAME",
@@ -13,6 +14,26 @@ const KEEP = new Set([
   "PWD",
   "NODE_ENV",
   "TZ",
+  "USERPROFILE",
+  "HOMEDRIVE",
+  "HOMEPATH",
+  "SYSTEMROOT",
+  "SystemRoot",
+  "WINDIR",
+  "windir",
+  "COMSPEC",
+  "ComSpec",
+  "PATHEXT",
+  "TEMP",
+  "TMP",
+  "APPDATA",
+  "LOCALAPPDATA",
+  "ProgramData",
+  "ProgramFiles",
+  "ProgramW6432",
+  "OS",
+  "NUMBER_OF_PROCESSORS",
+  "PROCESSOR_ARCHITECTURE",
 ]);
 
 export function filterSandboxEnv(env: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {

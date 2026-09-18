@@ -339,7 +339,7 @@ export async function dispatch(
           mcpCapabilities: { http: true, sse: false },
           sessionCapabilities: { additionalDirectories: {}, resume: {}, close: {}, list: {}, delete: {} },
         },
-        agentInfo: { name: "agent", version: "0.17.0" },
+        agentInfo: { name: "agent", version: "0.18.0" },
         authMethods: [],
       };
     case "authenticate":
