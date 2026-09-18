@@ -1,7 +1,7 @@
 import { injectExplicitSkills, loadSkills, type SkillIndex } from "../context/skills.js";
 import { HookRunner } from "../hooks/hooks.js";
 import { newId, nowIso } from "../ids.js";
-import { decidePermission } from "../permissions/policy.js";
+import { decidePermission, riskFor } from "../permissions/policy.js";
 import { buildSystemPrompt } from "../prompt/system.js";
 import { createSessionRuntime, type SessionRuntime } from "../runtime.js";
 import type { SessionStore } from "../session/store.js";
@@ -92,53 +92,62 @@ export async function* runTurn(options: RunTurnOptions): AsyncGenerator<LoopEven
         });
       }
 
-      for (const call of toolCalls) {
-        yield {
-          type: "tool-start",
-          callId: call.id,
-          name: call.name,
-          arguments: call.arguments,
-          locations: startLocationsForCall(call, runtime.workspace, runtime.extraRoots),
-        };
-        if (call.name === "task") {
-          const args = (call.arguments ?? {}) as Record<string, unknown>;
+      for (const batch of toolBatches(toolCalls)) {
+        const runnable: ToolCall[] = [];
+        for (const call of batch) {
           yield {
-            type: "subagent-start",
-            label: typeof args.label === "string" ? args.label : "task",
+            type: "tool-start",
+            callId: call.id,
+            name: call.name,
+            arguments: call.arguments,
+            locations: startLocationsForCall(call, runtime.workspace, runtime.extraRoots),
           };
+          if (call.name === "task") {
+            const args = (call.arguments ?? {}) as Record<string, unknown>;
+            yield {
+              type: "subagent-start",
+              label: typeof args.label === "string" ? args.label : "task",
+            };
+          }
+
+          const permission = await decidePermission(
+            call.name,
+            call.arguments,
+            config.approvalMode,
+            approver,
+            config.runMode,
+            config.sandboxBackend,
+            call.id,
+          );
+          yield { type: "permission", tool: call.name, decision: permission.decision, summary: permission.summary };
+
+          if (permission.decision === "deny") {
+            yield* finishTool(store, sessionId, call, permission.summary, true);
+            continue;
+          }
+
+          const pre = await hooks.preToolUse(call.name, call.arguments, signal);
+          if (pre.decision === "deny") {
+            const content = `Hook blocked ${call.name}: ${pre.reason ?? "denied"}`;
+            yield { type: "hook", hook: "PreToolUse", tool: call.name, message: content };
+            yield* finishTool(store, sessionId, call, content, true);
+            continue;
+          }
+          runnable.push(call);
         }
 
-        const permission = await decidePermission(
-          call.name,
-          call.arguments,
-          config.approvalMode,
-          approver,
-          config.runMode,
-          config.sandboxBackend,
-          call.id,
+        if (runnable.length === 0) continue;
+        const artifactMark = runtime.artifacts.count();
+        const executed = await Promise.all(
+          runnable.map((call) => {
+            const handler = tools.get(call.name);
+            return handler
+              ? runTool(handler, call.arguments, { config, signal, runtime, callId: call.id })
+              : Promise.resolve({ name: call.name, content: `unknown tool: ${call.name}`, isError: true });
+          }),
         );
-        yield { type: "permission", tool: call.name, decision: permission.decision, summary: permission.summary };
 
-        if (permission.decision === "deny") {
-          yield* finishTool(store, sessionId, call, permission.summary, true);
-          continue;
-        }
-
-        const pre = await hooks.preToolUse(call.name, call.arguments, signal);
-        if (pre.decision === "deny") {
-          const content = `Hook blocked ${call.name}: ${pre.reason ?? "denied"}`;
-          yield { type: "hook", hook: "PreToolUse", tool: call.name, message: content };
-          yield* finishTool(store, sessionId, call, content, true);
-          continue;
-        }
-
-        const handler = tools.get(call.name);
-        const beforeArtifacts = runtime.artifacts.count();
-        const executed = handler
-          ? await runTool(handler, call.arguments, { config, signal, runtime, callId: call.id })
-          : { name: call.name, content: `unknown tool: ${call.name}`, isError: true };
-
-        for (const artifact of runtime.artifacts.addedSince(beforeArtifacts)) {
+        for (const artifact of runtime.artifacts.addedSince(artifactMark)) {
           store.append(sessionId, {
             type: "artifact",
             id: newId("evt"),
@@ -148,48 +157,52 @@ export async function* runTurn(options: RunTurnOptions): AsyncGenerator<LoopEven
           yield { type: "artifact", artifact };
         }
 
-        const post = await hooks.postToolUse(
-          call.name,
-          call.arguments,
-          executed.content,
-          executed.isError,
-          signal,
-        );
-        const content = post.append ? `${executed.content}\n${post.append}` : executed.content;
-        if (post.append) {
-          yield { type: "hook", hook: "PostToolUse", tool: call.name, message: post.append };
-        }
-
-        if (call.name === "update_plan" && !executed.isError) {
-          try {
-            const args = (call.arguments ?? {}) as Record<string, unknown>;
-            const steps = parseSteps(args.steps);
-            const explanation = typeof args.explanation === "string" ? args.explanation : undefined;
-            store.append(sessionId, {
-              type: "plan",
-              id: newId("evt"),
-              timestamp: nowIso(),
-              steps,
-              explanation,
-            });
-            yield { type: "plan", steps, explanation };
-          } catch {
-            // plan event is best-effort
+        for (let i = 0; i < runnable.length; i++) {
+          const call = runnable[i]!;
+          const result = executed[i]!;
+          const post = await hooks.postToolUse(
+            call.name,
+            call.arguments,
+            result.content,
+            result.isError,
+            signal,
+          );
+          const content = post.append ? `${result.content}\n${post.append}` : result.content;
+          if (post.append) {
+            yield { type: "hook", hook: "PostToolUse", tool: call.name, message: post.append };
           }
-        }
 
-        if (call.name === "task") {
-          const args = (call.arguments ?? {}) as Record<string, unknown>;
-          yield {
-            type: "subagent-end",
-            label: typeof args.label === "string" ? args.label : "task",
-          };
-        }
+          if (call.name === "update_plan" && !result.isError) {
+            try {
+              const args = (call.arguments ?? {}) as Record<string, unknown>;
+              const steps = parseSteps(args.steps);
+              const explanation = typeof args.explanation === "string" ? args.explanation : undefined;
+              store.append(sessionId, {
+                type: "plan",
+                id: newId("evt"),
+                timestamp: nowIso(),
+                steps,
+                explanation,
+              });
+              yield { type: "plan", steps, explanation };
+            } catch {
+              // plan event is best-effort
+            }
+          }
 
-        yield* finishTool(store, sessionId, call, content, executed.isError, {
-          locations: executed.locations,
-          diff: executed.diff,
-        });
+          if (call.name === "task") {
+            const args = (call.arguments ?? {}) as Record<string, unknown>;
+            yield {
+              type: "subagent-end",
+              label: typeof args.label === "string" ? args.label : "task",
+            };
+          }
+
+          yield* finishTool(store, sessionId, call, content, result.isError, {
+            locations: result.locations,
+            diff: result.diff,
+          });
+        }
       }
     }
 
@@ -202,6 +215,29 @@ export async function* runTurn(options: RunTurnOptions): AsyncGenerator<LoopEven
     const message = err instanceof Error ? err.message : String(err);
     yield { type: "error", message };
   }
+}
+
+export function canRunInParallel(name: string, args?: unknown): boolean {
+  if (name === "ask_user" || name === "update_plan" || name === "task") return false;
+  return riskFor(name, args) === "read";
+}
+
+export function toolBatches(calls: ToolCall[]): ToolCall[][] {
+  const batches: ToolCall[][] = [];
+  for (const call of calls) {
+    const last = batches.at(-1);
+    if (
+      last &&
+      last.length > 0 &&
+      canRunInParallel(last[0]!.name, last[0]!.arguments) &&
+      canRunInParallel(call.name, call.arguments)
+    ) {
+      last.push(call);
+    } else {
+      batches.push([call]);
+    }
+  }
+  return batches;
 }
 
 async function* finishTool(

@@ -2,6 +2,7 @@
 import { createInterface } from "node:readline/promises";
 import { stdin as input, stdout as output, stderr } from "node:process";
 import { parseArgs } from "node:util";
+import path from "node:path";
 import { loadConfig } from "./config.js";
 import { completionScript } from "./completion.js";
 import { configReport, doctorReport } from "./doctor.js";
@@ -11,6 +12,7 @@ import { autoApprover, denyApprover } from "./permissions/policy.js";
 import { createProvider } from "./provider/factory.js";
 import { runAcpStdio } from "./protocol/acp.js";
 import type { AskUserFn } from "./runtime.js";
+import { formatInitResult, initWorkspace } from "./init.js";
 import { runSelfUpdate, runUninstall } from "./self_update.js";
 import { SessionStore } from "./session/store.js";
 import type { Approver, BrowserMode, LoopEvent, ProviderName, SandboxMode } from "./types.js";
@@ -22,6 +24,7 @@ function usage(): string {
        agent eval <file-or-dir>
        agent doctor
        agent config
+       agent init [dir]
        agent update
        agent uninstall
        agent completion bash|zsh|powershell
@@ -49,7 +52,7 @@ User file: ~/.agent/config.json (CLI and env override the file)
 Install (macOS/Linux): curl -fsSL https://raw.githubusercontent.com/mengzhihua/agent/main/scripts/install.sh | bash
 Install (Windows):     irm https://raw.githubusercontent.com/mengzhihua/agent/main/scripts/install.ps1 | iex
 
-Project files: AGENTS.md, .agent/skills/*/SKILL.md, .agent/mcp.json, .agent/hooks.json
+Project files: AGENTS.md, .agentignore, .agent/skills/*/SKILL.md, .agent/mcp.json, .agent/hooks.json
 Deliverables land in <workspace>/artifacts (or AGENT_ARTIFACTS).
 Shell is OS-sandboxed with bubblewrap on Linux when AGENT_SANDBOX=auto and bwrap is installed.
 On macOS/Windows, sandbox stays none unless a Linux bwrap backend is present.
@@ -78,6 +81,12 @@ async function main(): Promise<void> {
 
   if (process.argv[2] === "config") {
     output.write(`${configReport()}\n`);
+    return;
+  }
+
+  if (process.argv[2] === "init") {
+    const dir = path.resolve(process.argv[3] || process.cwd());
+    output.write(`${formatInitResult(initWorkspace(dir))}\n`);
     return;
   }
 

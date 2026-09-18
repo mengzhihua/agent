@@ -12,7 +12,7 @@
 4. `agent config` 打印生效配置；`agent doctor` 显示 PATH 与配置文件
 5. `agent completion bash|zsh|powershell`
 
-不做：npm 公有源、单文件原生二进制、Docker workspace、云端 VM、Playwright、SSE、图片 prompt、布尔 ACP config。
+不做：npm 公有源、单文件原生二进制、Docker workspace、云端 VM、Playwright、SSE、图片 prompt、布尔 ACP config。忽略规则 / Git / `agent init` 见 [期 19](phase-19.md)。
 
 ## 配置示例
 

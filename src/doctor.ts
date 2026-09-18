@@ -5,6 +5,7 @@ import { findChrome } from "./browser/chrome.js";
 import { agentHome, loadConfig } from "./config.js";
 import { defaultInstallPrefix, defaultShell, userBinDir, whichProgram } from "./platform.js";
 import { pathEntryPresent } from "./path_setup.js";
+import { inspectGit } from "./git-context.js";
 import { detectSandboxBackend } from "./sandbox/plan.js";
 import { userConfigPath } from "./user-config.js";
 import { packageRoot, packageVersion } from "./version.js";
@@ -24,6 +25,7 @@ export function doctorReport(): string {
     `path ${pathEntryPresent(binDir) ? `ok (${binDir})` : `missing ${binDir} — open a new terminal or re-run the installer`}`,
     `config ${fs.existsSync(cfg) ? cfg : `${cfg} (absent)`}`,
     `workspace ${config.workspace}`,
+    `git ${inspectGit(config.workspace)?.summary.replace(/^Git:\s*/, "") ?? "none"}`,
     `sandbox ${detectSandboxBackend(config.sandbox)}${whichProgram("bwrap") ? " (bwrap on PATH)" : ""}`,
     `browser ${config.browserBackend}${chrome ? ` (${chrome})` : " (no Chrome/Edge found)"}`,
     `ripgrep ${whichProgram("rg") ?? "fallback walker"}`,

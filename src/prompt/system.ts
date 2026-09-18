@@ -1,6 +1,7 @@
 import type { AgentConfig } from "../types.js";
 import { loadAgentsMd } from "../context/agents-md.js";
 import { type SkillIndex } from "../context/skills.js";
+import { inspectGit } from "../git-context.js";
 
 export function staticSystemPrompt(config: AgentConfig): string {
   const lines = [
@@ -19,6 +20,7 @@ export function staticSystemPrompt(config: AgentConfig): string {
     "",
     "How to work:",
     "- Inspect before editing. Use glob/grep/read instead of guessing file contents.",
+    "- grep/glob skip .gitignore, .agentignore, and common build directories (node_modules, dist, ...).",
     "- Edit with apply_patch. Create a file by omitting old_string.",
     "- Use shell for tests, builds, git, and other commands. Prefer non-interactive flags. Git is optional.",
     config.sandboxBackend === "none"
@@ -51,6 +53,10 @@ export function staticSystemPrompt(config: AgentConfig): string {
 
 export function buildSystemPrompt(config: AgentConfig, skills?: SkillIndex): string {
   const parts = [staticSystemPrompt(config)];
+  const git = inspectGit(config.workspace);
+  if (git) {
+    parts.push("", git.summary);
+  }
   const agents = loadAgentsMd(config.workspace);
   if (agents) {
     parts.push("", "## Project instructions", agents);

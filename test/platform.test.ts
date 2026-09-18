@@ -53,5 +53,6 @@ describe("doctor", () => {
     expect(out).toMatch(/browser (chrome|html)/);
     expect(out).toMatch(/^path /m);
     expect(out).toMatch(/^config /m);
+    expect(out).toMatch(/^git /m);
   });
 });
