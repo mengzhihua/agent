@@ -72,7 +72,7 @@ describe("ACP-shaped protocol", () => {
         loadSession: true,
         sessionCapabilities: { additionalDirectories: {}, resume: {}, close: {}, list: {}, delete: {} },
       },
-      agentInfo: { name: "agent", version: "0.13.0" },
+      agentInfo: { name: "agent", version: "0.14.0" },
     });
 
     const created = (await dispatch(
@@ -81,8 +81,10 @@ describe("ACP-shaped protocol", () => {
       controllers,
       { jsonrpc: "2.0", id: 2, method: "session/new" },
       () => undefined,
-    )) as { sessionId: string; modes: { currentModeId: string } };
+    )) as { sessionId: string; modes: { currentModeId: string }; configOptions: Array<{ id: string; currentValue: unknown }> };
     expect(created.modes.currentModeId).toBe("execute");
+    expect(created.configOptions.map((option) => option.id)).toEqual(["mode", "model", "approval"]);
+    expect(created.configOptions.find((option) => option.id === "mode")?.currentValue).toBe("execute");
 
     const result = await dispatch(
       host,
@@ -1130,6 +1132,123 @@ describe("ACP slash commands", () => {
     );
     expect(result).toEqual({ stopReason: "end_turn" });
     expect(methods).toEqual([]);
+    await host.close();
+  });
+});
+
+describe("ACP session config options", () => {
+  it("sets mode, model, and approval through session/set_config_option", async () => {
+    const host = await hostWith(new ScriptedProvider([{ text: "ok" }]));
+    const sessions = new Set<string>();
+    const controllers = new Map<string, AbortController>();
+    const created = (await dispatch(
+      host,
+      sessions,
+      controllers,
+      { jsonrpc: "2.0", id: 1, method: "session/new" },
+      () => undefined,
+    )) as { sessionId: string; configOptions: Array<{ id: string; currentValue: unknown }> };
+    expect(created.configOptions.find((option) => option.id === "model")?.currentValue).toBe(host.config.model);
+
+    const notes: unknown[] = [];
+    const updated = (await dispatch(
+      host,
+      sessions,
+      controllers,
+      {
+        jsonrpc: "2.0",
+        id: 2,
+        method: "session/set_config_option",
+        params: { sessionId: created.sessionId, configId: "mode", value: "plan" },
+      },
+      (note) => notes.push(note),
+    )) as { configOptions: Array<{ id: string; currentValue: unknown }> };
+    expect(host.config.runMode).toBe("plan");
+    expect(updated.configOptions.find((option) => option.id === "mode")?.currentValue).toBe("plan");
+    expect(JSON.stringify(notes)).toContain("current_mode_update");
+    expect(JSON.stringify(notes)).toContain("config_option_update");
+
+    await dispatch(
+      host,
+      sessions,
+      controllers,
+      {
+        jsonrpc: "2.0",
+        id: 3,
+        method: "session/set_config_option",
+        params: { sessionId: created.sessionId, configId: "model", value: "grok-4" },
+      },
+      () => undefined,
+    );
+    expect(host.config.model).toBe("grok-4");
+
+    await dispatch(
+      host,
+      sessions,
+      controllers,
+      {
+        jsonrpc: "2.0",
+        id: 4,
+        method: "session/set_config_option",
+        params: { sessionId: created.sessionId, configId: "approval", value: "auto" },
+      },
+      () => undefined,
+    );
+    expect(host.config.approvalMode).toBe("auto");
+
+    await expect(
+      dispatch(
+        host,
+        sessions,
+        controllers,
+        {
+          jsonrpc: "2.0",
+          id: 5,
+          method: "session/set_config_option",
+          params: { sessionId: created.sessionId, configId: "model", value: "not-a-model" },
+        },
+        () => undefined,
+      ),
+    ).rejects.toThrow("invalid model value");
+    await expect(
+      dispatch(
+        host,
+        sessions,
+        controllers,
+        {
+          jsonrpc: "2.0",
+          id: 6,
+          method: "session/set_config_option",
+          params: { sessionId: created.sessionId, configId: "nope", value: "x" },
+        },
+        () => undefined,
+      ),
+    ).rejects.toThrow("unknown config option");
+    await host.close();
+  });
+
+  it("keeps modes in sync when set_mode changes config options", async () => {
+    const host = await hostWith(new ScriptedProvider([{ text: "ok" }]));
+    const sessions = new Set<string>();
+    const controllers = new Map<string, AbortController>();
+    const created = (await dispatch(
+      host,
+      sessions,
+      controllers,
+      { jsonrpc: "2.0", id: 1, method: "session/new" },
+      () => undefined,
+    )) as { sessionId: string };
+    const notes: unknown[] = [];
+    await dispatch(
+      host,
+      sessions,
+      controllers,
+      { jsonrpc: "2.0", id: 2, method: "session/set_mode", params: { sessionId: created.sessionId, modeId: "plan" } },
+      (note) => notes.push(note),
+    );
+    expect(host.config.runMode).toBe("plan");
+    expect(JSON.stringify(notes)).toContain("config_option_update");
+    expect(JSON.stringify(notes)).toContain('"currentValue":"plan"');
     await host.close();
   });
 });

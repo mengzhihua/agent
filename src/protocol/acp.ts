@@ -3,7 +3,7 @@ import { stdin, stdout, stderr } from "node:process";
 import type { AgentHost } from "../host.js";
 import { autoApprover } from "../permissions/policy.js";
 import { sessionTitle, type SessionListRow } from "../session/store.js";
-import type { ApprovalRequest, LoopEvent, Risk, RunMode, SessionEvent } from "../types.js";
+import type { AgentConfig, ApprovalMode, ApprovalRequest, LoopEvent, Risk, RunMode, SessionEvent } from "../types.js";
 import { encodeMessage, extractMessages, type Framing } from "./framing.js";
 import { createAcpFileIo, hasClientFs, parseClientCapabilities } from "./fs.js";
 import type { NotifyFn, RequestFn } from "./rpc.js";
@@ -52,6 +52,84 @@ export function parseModeId(raw: unknown): RunMode {
   const id = String(raw ?? "");
   if (id === "plan" || id === "architect") return "plan";
   return "default";
+}
+
+export function modelSelectOptions(config: AgentConfig): { value: string; name: string }[] {
+  const values = [config.model, "gpt-4.1", "grok-4", "claude-sonnet-4-5"];
+  const seen = new Set<string>();
+  const out: { value: string; name: string }[] = [];
+  for (const value of values) {
+    if (!value || seen.has(value)) continue;
+    seen.add(value);
+    out.push({ value, name: value });
+  }
+  return out;
+}
+
+export function acpConfigOptions(host: AgentHost): Record<string, unknown>[] {
+  return [
+    {
+      id: "mode",
+      name: "Session Mode",
+      description: "Plan is read-only research; execute can edit and run tools.",
+      category: "mode",
+      type: "select",
+      currentValue: host.config.runMode === "plan" ? "plan" : "execute",
+      options: SESSION_MODES.map((mode) => ({
+        value: mode.id,
+        name: mode.name,
+        description: mode.description,
+      })),
+    },
+    {
+      id: "model",
+      name: "Model",
+      category: "model",
+      type: "select",
+      currentValue: host.config.model,
+      options: modelSelectOptions(host.config),
+    },
+    {
+      id: "approval",
+      name: "Approvals",
+      description: "Whether mutating tools need confirmation.",
+      type: "select",
+      currentValue: host.config.approvalMode,
+      options: [
+        { value: "ask", name: "Ask", description: "Ask before write, shell, or network tools." },
+        { value: "auto", name: "Auto", description: "Auto-approve write, shell, and network tools." },
+      ],
+    },
+  ];
+}
+
+export function applyConfigOption(host: AgentHost, configId: string, value: unknown): boolean {
+  if (configId === "mode") {
+    host.setRunMode(parseModeId(value));
+    return true;
+  }
+  if (configId === "approval") {
+    const mode = String(value);
+    if (mode !== "ask" && mode !== "auto") throw new Error("invalid approval value");
+    host.setApprovalMode(mode as ApprovalMode);
+    return false;
+  }
+  if (configId === "model") {
+    const model = String(value ?? "").trim();
+    if (!modelSelectOptions(host.config).some((option) => option.value === model)) {
+      throw new Error("invalid model value");
+    }
+    host.setModel(model);
+    return false;
+  }
+  throw new Error(`unknown config option: ${configId || "?"}`);
+}
+
+function notifyConfigOptions(host: AgentHost, sessionId: string, notify: NotifyFn): void {
+  notify({
+    sessionId,
+    update: { sessionUpdate: "config_option_update", configOptions: acpConfigOptions(host) },
+  });
 }
 
 export function permissionKind(risk: Risk): string {
@@ -234,7 +312,7 @@ export async function dispatch(
           mcpCapabilities: { http: true, sse: false },
           sessionCapabilities: { additionalDirectories: {}, resume: {}, close: {}, list: {}, delete: {} },
         },
-        agentInfo: { name: "agent", version: "0.13.0" },
+        agentInfo: { name: "agent", version: "0.14.0" },
         authMethods: [],
       };
     case "authenticate":
@@ -245,7 +323,7 @@ export async function dispatch(
       host.setSessionRoots(sessionId, parseAdditionalDirectories(req.params?.additionalDirectories));
       await host.attachSessionMcp(sessionId, req.params?.mcpServers);
       notifyAvailableCommands(sessionId, notify);
-      return { sessionId, modes: modeState(host.config.runMode) };
+      return { sessionId, modes: modeState(host.config.runMode), configOptions: acpConfigOptions(host) };
     }
     case "session/load": {
       const sessionId = await restoreSession(host, sessions, req.params);
@@ -254,12 +332,13 @@ export async function dispatch(
         if (update) notify({ sessionId, update });
       }
       notifyAvailableCommands(sessionId, notify);
+      notifyConfigOptions(host, sessionId, notify);
       return null;
     }
     case "session/resume": {
       const sessionId = await restoreSession(host, sessions, req.params);
       notifyAvailableCommands(sessionId, notify);
-      return { sessionId, modes: modeState(host.config.runMode) };
+      return { sessionId, modes: modeState(host.config.runMode), configOptions: acpConfigOptions(host) };
     }
     case "session/close": {
       const sessionId = String(req.params?.sessionId ?? "");
@@ -288,7 +367,19 @@ export async function dispatch(
       const modeId = req.params?.modeId ?? req.params?.mode;
       host.setRunMode(parseModeId(modeId));
       notify({ sessionId, update: { sessionUpdate: "current_mode_update", currentModeId: modeState(host.config.runMode).currentModeId } });
+      notifyConfigOptions(host, sessionId, notify);
       return {};
+    }
+    case "session/set_config_option": {
+      const sessionId = String(req.params?.sessionId ?? "");
+      if (!sessions.has(sessionId)) throw new Error("unknown session");
+      const configId = String(req.params?.configId ?? req.params?.id ?? "");
+      const modeChanged = applyConfigOption(host, configId, req.params?.value);
+      if (modeChanged) {
+        notify({ sessionId, update: { sessionUpdate: "current_mode_update", currentModeId: modeState(host.config.runMode).currentModeId } });
+      }
+      notifyConfigOptions(host, sessionId, notify);
+      return { configOptions: acpConfigOptions(host) };
     }
     case "session/cancel": {
       const sessionId = String(req.params?.sessionId ?? "");
@@ -392,6 +483,7 @@ export function applySlashCommand(
         sessionId,
         update: { sessionUpdate: "current_mode_update", currentModeId: modeState(host.config.runMode).currentModeId },
       });
+      notifyConfigOptions(host, sessionId, notify);
       return slash.rest ? "continue" : "done";
     case "execute":
       host.setRunMode("default");
@@ -399,12 +491,15 @@ export function applySlashCommand(
         sessionId,
         update: { sessionUpdate: "current_mode_update", currentModeId: modeState(host.config.runMode).currentModeId },
       });
+      notifyConfigOptions(host, sessionId, notify);
       return slash.rest ? "continue" : "done";
     case "yes":
-      host.config = { ...host.config, approvalMode: "auto" };
+      host.setApprovalMode("auto");
+      notifyConfigOptions(host, sessionId, notify);
       return slash.rest ? "continue" : "done";
     case "ask":
-      host.config = { ...host.config, approvalMode: "ask" };
+      host.setApprovalMode("ask");
+      notifyConfigOptions(host, sessionId, notify);
       return slash.rest ? "continue" : "done";
     case "skills": {
       const names = host.skills.all().map((skill) => `${skill.name}: ${skill.description}`);
