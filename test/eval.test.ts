@@ -1,6 +1,7 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import { collectEvalResult } from "../src/output.js";
 import { runEvalFile, runEvalTarget } from "../src/eval/run.js";
 
 const evalsDir = path.join(path.dirname(fileURLToPath(import.meta.url)), "evals");
@@ -17,5 +18,6 @@ describe("eval runner", () => {
     const results = await runEvalTarget(evalsDir);
     expect(results.length).toBeGreaterThan(0);
     expect(results.every((item) => item.ok)).toBe(true);
+    expect(collectEvalResult(results)).toMatchObject({ type: "eval", failed: 0, passed: results.length });
   });
 });

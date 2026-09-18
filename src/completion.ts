@@ -10,7 +10,7 @@ function bashCompletion(): string {
   return `# bash completion for agent
 _agent() {
   local cur="\${COMP_WORDS[COMP_CWORD]}"
-  local cmds="acp eval doctor update uninstall completion config init login logout --help --version --print --yes --plan --workspace --resume --list --model --provider --sandbox --browser --no-mcp"
+  local cmds="acp eval session doctor update uninstall completion config init login logout --help --version --print --quiet --output-format --yes --plan --workspace --resume --list --model --provider --sandbox --browser --no-mcp"
   COMPREPLY=( $(compgen -W "$cmds" -- "$cur") )
 }
 complete -F _agent agent
@@ -24,6 +24,7 @@ _agent() {
   cmds=(
     'acp:ACP JSON-RPC on stdio'
     'eval:Run deterministic eval fixtures'
+    'session:List, inspect, export, or delete sessions'
     'doctor:Show install and runtime diagnostics'
     'update:Re-run the one-click installer'
     'uninstall:Remove shims and checkout'
@@ -35,6 +36,8 @@ _agent() {
     '--help'
     '--version'
     '--print'
+    '--quiet'
+    '--output-format'
     '--yes'
     '--plan'
     '--workspace'
@@ -56,8 +59,8 @@ function powershellCompletion(): string {
   return `Register-ArgumentCompleter -Native -CommandName agent -ScriptBlock {
   param($wordToComplete)
   $cmds = @(
-    'acp','eval','doctor','update','uninstall','completion','config','init','login','logout',
-    '--help','--version','--print','--yes','--plan','--workspace','--resume',
+    'acp','eval','session','doctor','update','uninstall','completion','config','init','login','logout',
+    '--help','--version','--print','--quiet','--output-format','--yes','--plan','--workspace','--resume',
     '--list','--model','--provider','--sandbox','--browser','--no-mcp'
   )
   $cmds | Where-Object { $_ -like "$wordToComplete*" } | ForEach-Object {
