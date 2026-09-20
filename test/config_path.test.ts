@@ -116,7 +116,7 @@ describe("completion and update", () => {
     expect(completionScript("bash")).toContain("session");
     expect(completionScript("bash")).toContain("memory");
     expect(completionScript("zsh")).toContain("#compdef agent");
-    expect(completionScript("zsh")).toContain("session:List, inspect, export, or delete sessions");
+    expect(completionScript("zsh")).toContain("session:List, inspect, export, fork, or delete sessions");
     expect(completionScript("powershell")).toContain("Register-ArgumentCompleter");
     expect(completionScript("powershell")).toContain("'session'");
     expect(completionScript("bash")).toContain("--file");
