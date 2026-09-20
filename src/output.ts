@@ -101,6 +101,25 @@ export function formatSessionFork(
   return JSON.stringify({ id: result.id, forkedFrom: result.forkedFrom });
 }
 
+export function formatSessionRewind(
+  result: { id: string; removed: number; untilEventId?: string },
+  format: OutputFormat,
+): string {
+  if (format === "text") {
+    const until = result.untilEventId ? ` until ${result.untilEventId}` : "";
+    return `Rewound ${result.id}${until} (${result.removed} events removed)`;
+  }
+  return JSON.stringify(result);
+}
+
+export function formatSessionCompact(
+  result: { id: string; summary: string },
+  format: OutputFormat,
+): string {
+  if (format === "text") return `Compacted ${result.id}\n${result.summary}`;
+  return JSON.stringify({ id: result.id, summary: result.summary });
+}
+
 export interface EvalJsonResult {
   type: "eval";
   passed: number;

@@ -10,7 +10,7 @@ function bashCompletion(): string {
   return `# bash completion for agent
 _agent() {
   local cur="\${COMP_WORDS[COMP_CWORD]}"
-  local cmds="acp eval session memory doctor update uninstall serve completion config init login logout --help --version --print --quiet --output-format --yes --plan --workspace --resume --list --file --model --provider --sandbox --browser --no-mcp"
+  local cmds="acp eval session memory doctor update uninstall serve completion config init login logout --help --version --print --quiet --output-format --yes --plan --workspace --continue --resume --list --file --model --provider --sandbox --browser --no-mcp"
   COMPREPLY=( $(compgen -W "$cmds" -- "$cur") )
 }
 complete -F _agent agent
@@ -24,7 +24,7 @@ _agent() {
   cmds=(
     'acp:ACP JSON-RPC on stdio'
     'eval:Run deterministic eval fixtures'
-    'session:List, inspect, export, fork, cost, or delete sessions'
+    'session:List, inspect, export, fork, rewind, compact, cost, or delete sessions'
     'memory:Show durable user and project memory'
     'doctor:Show install and runtime diagnostics'
     'update:Re-run the one-click installer'
@@ -43,6 +43,7 @@ _agent() {
     '--yes'
     '--plan'
     '--workspace'
+    '--continue'
     '--resume'
     '--list'
     '--file'
@@ -63,7 +64,7 @@ function powershellCompletion(): string {
   param($wordToComplete)
   $cmds = @(
     'acp','eval','session','memory','doctor','update','uninstall','serve','completion','config','init','login','logout',
-    '--help','--version','--print','--quiet','--output-format','--yes','--plan','--workspace','--resume',
+    '--help','--version','--print','--quiet','--output-format','--yes','--plan','--workspace','--continue','--resume',
     '--list','--file','--model','--provider','--sandbox','--browser','--no-mcp'
   )
   $cmds | Where-Object { $_ -like "$wordToComplete*" } | ForEach-Object {

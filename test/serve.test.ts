@@ -33,6 +33,7 @@ describe("agent serve", () => {
       new ScriptedProvider([
         { text: "hello from serve", usage: { inputTokens: 10, outputTokens: 2 } },
         { text: "hello from serve" },
+        { text: "session summary" },
       ]),
       store,
       autoApprover(),
@@ -93,5 +94,19 @@ describe("agent serve", () => {
     expect(sse).toContain("text-delta");
     expect(sse).toContain("hello from serve");
     expect(sse).toContain('"type":"result"');
+    const compacted = await fetch(`${server.url}/v1/sessions/${encodeURIComponent(body.sessionId)}/compact`, {
+      method: "POST",
+      headers: { authorization: "Bearer secret" },
+    });
+    expect(compacted.status).toBe(200);
+    expect(await compacted.json()).toMatchObject({ id: body.sessionId, summary: "session summary" });
+    const rewound = await fetch(`${server.url}/v1/sessions/${encodeURIComponent(body.sessionId)}/rewind`, {
+      method: "POST",
+      headers: { authorization: "Bearer secret" },
+    });
+    expect(rewound.status).toBe(200);
+    const rewoundBody = (await rewound.json()) as { id: string; removed: number };
+    expect(rewoundBody).toMatchObject({ id: body.sessionId });
+    expect(rewoundBody.removed).toBeGreaterThan(0);
   });
 });

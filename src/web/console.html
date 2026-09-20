@@ -34,6 +34,8 @@
     <input id="workspace" placeholder="workspace 路径（可选）" />
     <button class="ghost" id="new" type="button">新会话</button>
     <button class="ghost" id="fork" type="button">分叉</button>
+    <button class="ghost" id="rewind" type="button">回退</button>
+    <button class="ghost" id="compact" type="button">压缩</button>
     <button class="ghost" id="cost" type="button">用量</button>
     <div id="sessions"></div>
     <button class="ghost" id="doctor" type="button">doctor</button>
@@ -119,6 +121,39 @@
         });
         state.sessionId = body.id;
         line("forked  " + body.forkedFrom + " -> " + body.id, "tool");
+        refreshSessions();
+      } catch (err) {
+        line("error  " + err.message, "err");
+      }
+    };
+    $("rewind").onclick = async () => {
+      if (!state.sessionId) return;
+      try {
+        const body = await api("/v1/sessions/" + encodeURIComponent(state.sessionId) + "/rewind", {
+          method: "POST",
+          headers: headers(),
+        });
+        line("rewound  " + body.removed + " events", "tool");
+        const shown = await api("/v1/sessions/" + encodeURIComponent(state.sessionId), { headers: headers() });
+        $("log").innerHTML = "";
+        (shown.events || []).forEach((event) => {
+          if (event.type === "user") line("you  " + event.text);
+          if (event.type === "assistant") line(event.text);
+          if (event.type === "compact") line("compact  " + event.summary, "tool");
+        });
+        refreshSessions();
+      } catch (err) {
+        line("error  " + err.message, "err");
+      }
+    };
+    $("compact").onclick = async () => {
+      if (!state.sessionId) return;
+      try {
+        const body = await api("/v1/sessions/" + encodeURIComponent(state.sessionId) + "/compact", {
+          method: "POST",
+          headers: headers(),
+        });
+        line("compact  " + (body.summary || ""), "tool");
         refreshSessions();
       } catch (err) {
         line("error  " + err.message, "err");
