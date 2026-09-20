@@ -2,7 +2,7 @@
 
 通用 agent 软件：一个极简的模型–工具循环，外面套 harness。
 
-当前进度：**期 29 — 会话 fork**。
+当前进度：**期 30 — Apple Silicon 原生包**。
 
 - [行业研究](docs/industry-agent-research.md) — Codex、Claude Code、Grok Build、Devin、Cursor、Gemini CLI、Manus、OpenHands 等怎么做，以及通用 harness 的收敛形态
 - [期 0](docs/phase-0.md)
@@ -35,6 +35,7 @@
 - [期 27](docs/phase-27.md)
 - [期 28](docs/phase-28.md)
 - [期 29](docs/phase-29.md)
+- [期 30](docs/phase-30.md)
 
 ## 研究结论（极简）
 
@@ -67,7 +68,7 @@ irm https://raw.githubusercontent.com/mengzhihua/agent/main/scripts/install.ps1 
 | 平台 | 文件 |
 | --- | --- |
 | Windows x64 | `agent-win-x64.exe` |
-| macOS Apple Silicon | `agent-darwin-arm64.tar.gz` |
+| macOS Apple Silicon | `agent-darwin-arm64.tar.gz`（macOS 14 ARM 上 codesign） |
 | macOS Intel | `agent-darwin-x64.tar.gz` |
 | Linux x64 | `agent-linux-x64.tar.gz` |
 | Linux arm64 | `agent-linux-arm64.tar.gz` |
@@ -78,6 +79,10 @@ irm https://raw.githubusercontent.com/mengzhihua/agent/main/scripts/install.ps1 
 tar -xzf agent-linux-x64.tar.gz
 ./agent -V
 
+# Apple Silicon
+tar -xzf agent-darwin-arm64.tar.gz
+./agent -V
+
 # 服务端
 ./agent serve --port 8080          # 浏览器打开 http://127.0.0.1:8080
 java -jar agent-server.jar         # 同一套 /v1 API + 页面
@@ -86,7 +91,7 @@ docker build -t agent . && docker run --rm -p 8080:8080 -e OPENAI_API_KEY agent
 
 装好后执行 `agent doctor`。新开一个终端即可直接运行 `agent`。之后可用 `agent update` / `agent uninstall`。
 
-指定版本：`AGENT_REF=v0.30.0`。要从源码装 main：`AGENT_REF=main`（此时需要 Node 22）。
+指定版本：`AGENT_REF=v0.31.0`。要从源码装 main：`AGENT_REF=main`（此时需要 Node 22）。
 
 合入 `main` 且 CI（Linux / macOS / Windows）全绿后，GitHub Actions 会打 `v*` Release（原生包 + tarball + `agent-server.jar`）。
 

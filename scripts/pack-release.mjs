@@ -105,7 +105,7 @@ export function writeNotes(outDir, version) {
     "| --- | --- |",
     "| Windows x64 | `agent-win-x64.exe` or `agent-win-x64.zip` |",
     "| Windows arm64 | `agent-win-arm64.exe` |",
-    "| macOS Apple Silicon | `agent-darwin-arm64.tar.gz` |",
+    "| macOS Apple Silicon | `agent-darwin-arm64.tar.gz` (codesigned on macOS 14) |",
     "| macOS Intel | `agent-darwin-x64.tar.gz` |",
     "| Linux x64 | `agent-linux-x64.tar.gz` |",
     "| Linux arm64 | `agent-linux-arm64.tar.gz` |",
@@ -139,6 +139,15 @@ export function writeChecksums(outDir) {
   fs.writeFileSync(path.join(outDir, "SHA256SUMS"), `${lines.join("\n")}\n`);
 }
 
+export function finalizeRelease(opts = {}) {
+  const from = opts.from ?? root;
+  const outDir = opts.outDir ?? path.join(from, "dist-release");
+  const pkg = JSON.parse(fs.readFileSync(path.join(from, "package.json"), "utf8"));
+  writeNotes(outDir, pkg.version);
+  writeChecksums(outDir);
+  return { version: pkg.version, outDir };
+}
+
 export async function packAll(opts = {}) {
   const packed = packRelease(opts);
   const argv = opts.argv ?? process.argv.slice(2);
@@ -146,7 +155,7 @@ export async function packAll(opts = {}) {
   let nativeFiles = [];
   if (!argv.includes("--no-native")) {
     const { packNative } = await import("./pack-native.mjs");
-    const native = await packNative({ from: opts.from, outDir: packed.outDir, all });
+    const native = await packNative({ from: opts.from, outDir: packed.outDir, all, argv });
     nativeFiles = native.files;
   }
   if (!argv.includes("--no-jar")) {
@@ -160,7 +169,13 @@ export async function packAll(opts = {}) {
 
 const isMain = process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
 if (isMain) {
-  const packed = await packAll();
-  console.log(`Packed agent ${packed.version}`);
-  console.log(packed.outDir);
+  if (process.argv.includes("--finalize")) {
+    const packed = finalizeRelease();
+    console.log(`Finalized agent ${packed.version}`);
+    console.log(packed.outDir);
+  } else {
+    const packed = await packAll();
+    console.log(`Packed agent ${packed.version}`);
+    console.log(packed.outDir);
+  }
 }

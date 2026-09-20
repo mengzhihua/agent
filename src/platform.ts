@@ -77,15 +77,28 @@ export function chromeCandidates(explicit?: string): string[] {
   ].filter((item): item is string => Boolean(item));
 }
 
+export function pidAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export function killProcessTree(pid: number): void {
   if (process.platform === "win32") {
     spawnSync("taskkill", ["/pid", String(pid), "/T", "/F"], { stdio: "ignore", windowsHide: true });
     return;
   }
   try {
-    process.kill(pid, "SIGKILL");
+    process.kill(-pid, "SIGKILL");
   } catch {
-    // already gone
+    try {
+      process.kill(pid, "SIGKILL");
+    } catch {
+      // already gone
+    }
   }
 }
 
