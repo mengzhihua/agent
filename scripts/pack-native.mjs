@@ -37,6 +37,37 @@ export function currentNativeTarget() {
   return target;
 }
 
+/** Targets this host can pack into a runnable binary. Mach-O needs macOS codesign. */
+export function packableTargets(platform = process.platform) {
+  if (platform === "darwin") return NATIVE_TARGETS.filter((item) => item.id.startsWith("darwin-"));
+  if (platform === "win32") return NATIVE_TARGETS.filter((item) => item.id.startsWith("win-"));
+  return NATIVE_TARGETS.filter((item) => !item.macho);
+}
+
+export function resolveNativeTargets(ids) {
+  return ids.map((id) => {
+    const target = NATIVE_TARGETS.find((item) => item.id === id);
+    if (!target) throw new Error(`unknown native target ${id}`);
+    return target;
+  });
+}
+
+export function parseNativeTargets(argv = process.argv.slice(2)) {
+  const ids = [];
+  for (let i = 0; i < argv.length; i++) {
+    const arg = argv[i];
+    if (arg === "--targets") {
+      ids.push(...String(argv[++i] ?? "").split(","));
+    } else if (arg.startsWith("--targets=")) {
+      ids.push(...arg.slice("--targets=".length).split(","));
+    }
+  }
+  const wanted = ids.map((id) => id.trim()).filter(Boolean);
+  if (wanted.length) return resolveNativeTargets(wanted);
+  if (argv.includes("--all")) return packableTargets();
+  return [currentNativeTarget()];
+}
+
 function run(command, args, cwd) {
   const result = spawnSync(command, args, { cwd, stdio: "inherit", shell: process.platform === "win32" });
   if (result.status !== 0) {
@@ -174,7 +205,31 @@ function writeBlob(entry, workDir, from) {
   return blob;
 }
 
+function runCodesign(args) {
+  return spawnSync("codesign", args, { encoding: "utf8" });
+}
+
+function removeMachoSignature(binary) {
+  const result = runCodesign(["--remove-signature", binary]);
+  if (result.status !== 0 && !/not signed|code object is not signed/i.test(`${result.stderr}${result.stdout}`)) {
+    throw new Error(`codesign --remove-signature failed: ${result.stderr || result.stdout}`);
+  }
+}
+
+function signMacho(binary) {
+  const result = runCodesign(["--sign", "-", "--force", binary]);
+  if (result.status !== 0) {
+    throw new Error(`codesign failed: ${result.stderr || result.stdout}`);
+  }
+}
+
 async function injectBlob(binary, blob, macho) {
+  if (macho) {
+    if (process.platform !== "darwin") {
+      throw new Error(`${path.basename(binary)} must be packed on macOS so Apple Silicon can run it (codesign)`);
+    }
+    removeMachoSignature(binary);
+  }
   const postject = await import("postject");
   const inject = postject.inject || postject.default?.inject;
   if (typeof inject !== "function") throw new Error("postject.inject is missing");
@@ -183,6 +238,7 @@ async function injectBlob(binary, blob, macho) {
     machoSegmentName: macho ? "NODE_SEA" : undefined,
     overwrite: true,
   });
+  if (macho) signMacho(binary);
 }
 
 function makeTarGz(file, archive, innerName) {
@@ -217,7 +273,12 @@ export async function packNative(opts = {}) {
   const pkg = JSON.parse(fs.readFileSync(path.join(from, "package.json"), "utf8"));
   const version = pkg.version;
   const nodeVersion = opts.nodeVersion ?? process.versions.node;
-  const targets = opts.targets ?? (opts.all ? NATIVE_TARGETS : [currentNativeTarget()]);
+  const argv = opts.argv ?? process.argv.slice(2);
+  const targets =
+    opts.targets ??
+    (opts.all && !argv.some((arg) => arg === "--targets" || arg.startsWith("--targets="))
+      ? packableTargets()
+      : parseNativeTargets(argv));
   const cacheDir = opts.cacheDir ?? path.join(os.homedir(), ".cache", "agent-pack", `node-v${nodeVersion}`);
   fs.mkdirSync(outDir, { recursive: true });
   const workDir = fs.mkdtempSync(path.join(os.tmpdir(), "agent-sea-"));
@@ -253,6 +314,6 @@ export async function packNative(opts = {}) {
 
 const isMain = process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
 if (isMain) {
-  const packed = await packNative({ all: process.argv.includes("--all") });
+  const packed = await packNative();
   for (const file of packed.files) console.log(file);
 }

@@ -5,7 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { currentNativeTarget, packNative } from "../scripts/pack-native.mjs";
+import { currentNativeTarget, packNative, packableTargets, parseNativeTargets } from "../scripts/pack-native.mjs";
 import { packageVersion } from "../src/version.js";
 
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -39,6 +39,15 @@ function waitForHealth(url: string, timeoutMs = 15_000): Promise<Record<string, 
 }
 
 describe("native SEA binary", () => {
+  it("includes Apple Silicon among packable Darwin targets", () => {
+    expect(packableTargets("darwin").map((item) => item.id)).toEqual(["darwin-x64", "darwin-arm64"]);
+    expect(packableTargets("linux").map((item) => item.id)).not.toContain("darwin-arm64");
+    expect(parseNativeTargets(["--targets", "darwin-arm64,darwin-x64"]).map((item) => item.id)).toEqual([
+      "darwin-arm64",
+      "darwin-x64",
+    ]);
+  });
+
   it("packs the current platform and runs without node on PATH", async () => {
     const tsc = spawnSync(process.execPath, [path.join(root, "node_modules", "typescript", "bin", "tsc")], {
       cwd: root,
@@ -50,6 +59,11 @@ describe("native SEA binary", () => {
     expect(packed.version).toBe(packageVersion());
     const exe = packed.files.find((file) => !file.endsWith(".tar.gz") && !file.endsWith(".zip"));
     expect(exe && fs.existsSync(exe)).toBe(true);
+    if (process.platform === "darwin") {
+      const signed = spawnSync("codesign", ["-dv", exe!], { encoding: "utf8" });
+      expect(signed.status, signed.stderr || signed.stdout).toBe(0);
+      expect(`${signed.stderr}${signed.stdout}`).toContain("adhoc");
+    }
     const env = {
       ...process.env,
       PATH: fs.mkdtempSync(path.join(os.tmpdir(), "agent-empty-path-")),

@@ -14,7 +14,7 @@ permissions:
   contents: write
 
 jobs:
-  release:
+  pack-linux:
     if: >-
       github.event_name == 'workflow_dispatch' ||
       (github.event.workflow_run.conclusion == 'success' &&
@@ -38,6 +38,56 @@ jobs:
       - run: npm test
       - run: npm run build
       - run: node scripts/pack-release.mjs --all
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist-linux
+          path: dist-release/
+          if-no-files-found: error
+
+  pack-mac:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'push' &&
+       github.event.workflow_run.head_branch == 'main')
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - name: Pack Apple Silicon and Intel Mac binaries
+        run: |
+          test "$(uname -m)" = "arm64"
+          node scripts/pack-native.mjs --targets darwin-arm64,darwin-x64
+          codesign -dv --verbose=2 dist-release/agent-darwin-arm64
+          file dist-release/agent-darwin-arm64 dist-release/agent-darwin-x64
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist-mac
+          path: dist-release/
+          if-no-files-found: error
+
+  publish:
+    needs: [pack-linux, pack-mac]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist-release
+          merge-multiple: true
+      - run: node scripts/pack-release.mjs --finalize
       - id: ver
         run: echo "version=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
       - name: Publish GitHub Release
@@ -69,3 +119,6 @@ jobs:
               --latest
           fi
           echo "Published https://github.com/${GITHUB_REPOSITORY}/releases/tag/${TAG}"
+          ls -la dist-release
+          test -f dist-release/agent-darwin-arm64.tar.gz
+          test -f dist-release/agent-darwin-arm64

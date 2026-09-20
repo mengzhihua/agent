@@ -146,5 +146,9 @@ describe("one-click setup", () => {
     expect(release).toContain("gh release create");
     expect(release).toContain("--latest");
     expect(release).toContain('basename "$f")" = "NOTES.md"');
+    expect(release).toContain("macos-14");
+    expect(release).toContain("darwin-arm64");
+    expect(release).toContain("pack-mac");
+    expect(release).toContain("codesign");
   });
 });

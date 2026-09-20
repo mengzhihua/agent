@@ -12,7 +12,7 @@
 4. `POST /v1/sessions/{id}/fork`；Web 控制台「分叉」；Spring Boot 同样代理
 5. Windows：`file:///tmp/...` 断言按平台规范化斜杠，避免挡 CI 发版
 
-不做：OAuth、累计 cost、图片 prompt、Docker workspace / 云端 VM、Playwright、npm 公有源、Apple 公证。Fork 不复制 MCP 连接（ACP 可在 `session/fork` 里再传 `mcpServers`）。
+不做：OAuth、累计 cost、图片 prompt、Docker workspace / 云端 VM、Playwright、npm 公有源、Apple 公证。Fork 不复制 MCP 连接（ACP 可在 `session/fork` 里再传 `mcpServers`）。Apple Silicon 可运行的 Release 包见 [期 30](phase-30.md)。
 
 ## 怎么跑
 
