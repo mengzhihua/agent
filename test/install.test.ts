@@ -35,6 +35,17 @@ describe("one-click setup", () => {
     });
     expect(completion.status).toBe(0);
     expect(completion.stdout).toContain("complete -F _agent agent");
+    const emptySessions = fs.mkdtempSync(path.join(os.tmpdir(), "agent-list-"));
+    const listed = spawnSync(
+      process.execPath,
+      [path.join(root, "dist/cli.js"), "--list", "--output-format", "json", "--session-dir", emptySessions],
+      { encoding: "utf8" },
+    );
+    expect(listed.status, listed.stderr).toBe(0);
+    expect(JSON.parse(listed.stdout)).toEqual([]);
+    const help = spawnSync(process.execPath, [path.join(root, "dist/cli.js"), "--help"], { encoding: "utf8" });
+    expect(help.stdout).toContain("--output-format");
+    expect(help.stdout).toContain("--quiet");
   });
 
   it("ships unix and windows installers", () => {
