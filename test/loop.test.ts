@@ -209,4 +209,18 @@ describe("agent loop", () => {
     expect(reads.some((event) => event.type === "tool-end" && event.content.includes("beta"))).toBe(true);
     expect(events.some((event) => event.type === "turn-end")).toBe(true);
   });
+
+  it("inlines @path attachments into the stored user message", async () => {
+    const workspace = await fsp.mkdtemp(path.join(os.tmpdir(), "agent-attach-loop-"));
+    await fsp.writeFile(path.join(workspace, "note.ts"), "ATTACHED_LOOP_TOKEN\n");
+    const store = new SessionStore(fs.mkdtempSync(path.join(os.tmpdir(), "agent-attach-loop-sess-")));
+    const provider = new ScriptedProvider([{ text: "noted" }]);
+    await collect(store, "a1", "explain @note.ts", provider, workspace);
+    const user = store.read("a1").find((event) => event.type === "user");
+    expect(user).toMatchObject({ type: "user" });
+    if (user?.type === "user") {
+      expect(user.text).toContain("ATTACHED_LOOP_TOKEN");
+      expect(user.text).toContain("explain @note.ts");
+    }
+  });
 });

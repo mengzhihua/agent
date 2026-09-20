@@ -79,6 +79,7 @@ describe("ACP-shaped protocol", () => {
       protocolVersion: ACP_PROTOCOL_VERSION,
       agentCapabilities: {
         loadSession: true,
+        promptCapabilities: { image: false, audio: false, embeddedContext: true },
         sessionCapabilities: { additionalDirectories: {}, resume: {}, close: {}, list: {}, delete: {} },
       },
       agentInfo: { name: "agent", version: packageVersion() },
@@ -109,6 +110,49 @@ describe("ACP-shaped protocol", () => {
     );
     expect(result).toEqual({ stopReason: "end_turn" });
     expect(JSON.stringify(notes)).toContain("hello from acp");
+    await host.close();
+  });
+
+  it("inlines resource_link and embedded resource blocks", async () => {
+    const provider = new ScriptedProvider([{ text: "saw attachments" }]);
+    const host = await hostWith(provider);
+    const note = path.join(host.config.workspace, "note.txt");
+    fs.writeFileSync(note, "ACP_ATTACH_TOKEN\n");
+    const sessions = new Set<string>();
+    const controllers = new Map<string, AbortController>();
+    const created = (await dispatch(
+      host,
+      sessions,
+      controllers,
+      { jsonrpc: "2.0", id: 1, method: "session/new" },
+      () => undefined,
+    )) as { sessionId: string };
+    await dispatch(
+      host,
+      sessions,
+      controllers,
+      {
+        jsonrpc: "2.0",
+        id: 2,
+        method: "session/prompt",
+        params: {
+          sessionId: created.sessionId,
+          prompt: [
+            { type: "text", text: "look" },
+            { type: "resource_link", uri: `file://${note}` },
+            { type: "resource", resource: { uri: "file:///memory/hint.ts", text: "EMBEDDED_HINT" } },
+          ],
+        },
+      },
+      () => undefined,
+    );
+    const user = host.store.read(created.sessionId).find((event) => event.type === "user");
+    expect(user?.type).toBe("user");
+    if (user?.type === "user") {
+      expect(user.text).toContain("ACP_ATTACH_TOKEN");
+      expect(user.text).toContain("EMBEDDED_HINT");
+      expect(user.text).toContain("look");
+    }
     await host.close();
   });
 

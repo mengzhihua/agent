@@ -1,7 +1,7 @@
 {
   "name": "agent",
   "private": true,
-  "version": "0.23.0",
+  "version": "0.24.0",
   "type": "module",
   "description": "General-purpose agent harness: one tool loop, local workspace, Chrome, sandbox, eval, ACP.",
   "bin": {
