@@ -51,7 +51,7 @@ describe("init and parent AGENTS.md", () => {
   it("scaffolds project files once", () => {
     const home = fs.mkdtempSync(path.join(os.tmpdir(), "agent-init-"));
     const first = initWorkspace(home);
-    expect(first.created).toEqual(expect.arrayContaining(["AGENTS.md", ".agentignore", ".agent/mcp.json", ".agent/hooks.json"]));
+    expect(first.created).toEqual(expect.arrayContaining(["AGENTS.md", ".agentignore", ".agent/mcp.json", ".agent/hooks.json", ".agent/MEMORY.md"]));
     expect(fs.existsSync(path.join(home, ".agent", "skills"))).toBe(true);
     const second = initWorkspace(home);
     expect(second.created).toEqual([]);

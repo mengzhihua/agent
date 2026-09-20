@@ -1347,6 +1347,7 @@ describe("ACP slash commands", () => {
   it("parses known commands and leaves unknown text alone", () => {
     expect(parseSlashCommand("/plan inspect auth")).toEqual({ name: "plan", rest: "inspect auth" });
     expect(parseSlashCommand("/skills")).toEqual({ name: "skills", rest: "" });
+    expect(parseSlashCommand("/memory")).toEqual({ name: "memory", rest: "" });
     expect(parseSlashCommand("/unknown foo")).toEqual({ rest: "/unknown foo" });
     expect(parseSlashCommand("not a command")).toEqual({ rest: "not a command" });
   });

@@ -8,6 +8,7 @@ import { browserTool } from "./browser.js";
 import { skillTool, taskTool, updatePlanTool, type TaskArgs } from "./extra.js";
 import { globDefinition, globTool } from "./glob.js";
 import { grepDefinition, grepTool } from "./grep.js";
+import { memoryTool } from "./memory.js";
 import { readDefinition, readFileTool } from "./read.js";
 import { shellDefinition, shellTool } from "./shell.js";
 import { asOptionalNumber, asString, type ToolContext, type ToolExecuteResult, type ToolHandler } from "./types.js";
@@ -120,6 +121,7 @@ export function createBuiltinTools(config: AgentConfig, options: RegistryOptions
     browserTool(config),
     artifactTool(config),
     askUserTool(config),
+    memoryTool(config),
     skillTool(config, skills),
     updatePlanTool(config),
   ];

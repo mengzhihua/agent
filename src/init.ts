@@ -32,6 +32,14 @@ const AGENTIGNORE_TEMPLATE = `# Extra ignore patterns for grep/glob (gitignore s
 # .gitignore is also respected.
 `;
 
+const MEMORY_TEMPLATE = `# Project memory
+
+Durable notes for this workspace. The agent reads this every turn and may update it with the memory tool.
+
+- Preferences and conventions
+- Facts that should survive across sessions
+`;
+
 export function initWorkspace(workspace: string): InitResult {
   const root = path.resolve(workspace);
   fs.mkdirSync(path.join(root, ".agent", "skills"), { recursive: true });
@@ -41,6 +49,7 @@ export function initWorkspace(workspace: string): InitResult {
   writeIfMissing(root, ".agentignore", AGENTIGNORE_TEMPLATE, created, skipped);
   writeIfMissing(root, ".agent/mcp.json", MCP_TEMPLATE, created, skipped);
   writeIfMissing(root, ".agent/hooks.json", HOOKS_TEMPLATE, created, skipped);
+  writeIfMissing(root, ".agent/MEMORY.md", MEMORY_TEMPLATE, created, skipped);
   return { workspace: root, created, skipped };
 }
 

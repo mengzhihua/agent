@@ -96,6 +96,7 @@ describe("one-click setup", () => {
     expect(help.stdout).toContain("--output-format");
     expect(help.stdout).toContain("--quiet");
     expect(help.stdout).toContain("agent session list");
+    expect(help.stdout).toContain("agent memory");
     expect(help.stdout).toContain("--file");
   });
 

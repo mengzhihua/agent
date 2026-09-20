@@ -114,6 +114,7 @@ describe("completion and update", () => {
   it("prints bash, zsh, and powershell scripts", () => {
     expect(completionScript("bash")).toContain("complete -F _agent agent");
     expect(completionScript("bash")).toContain("session");
+    expect(completionScript("bash")).toContain("memory");
     expect(completionScript("zsh")).toContain("#compdef agent");
     expect(completionScript("zsh")).toContain("session:List, inspect, export, or delete sessions");
     expect(completionScript("powershell")).toContain("Register-ArgumentCompleter");

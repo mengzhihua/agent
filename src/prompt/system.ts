@@ -1,5 +1,6 @@
 import type { AgentConfig } from "../types.js";
 import { loadAgentsMd } from "../context/agents-md.js";
+import { formatMemoryPrompt } from "../context/memory.js";
 import { type SkillIndex } from "../context/skills.js";
 import { inspectGit } from "../git-context.js";
 
@@ -39,6 +40,7 @@ export function staticSystemPrompt(config: AgentConfig): string {
     "- Use the skill tool to load specialized instructions when a listed skill matches.",
     "- Use task to spawn an isolated subagent for exploration or a bounded subtask. It cannot spawn further subagents.",
     "- User messages may include <attached_files> from @path, --file, or the editor. Treat those as the current contents.",
+    "- Use the memory tool to remember durable user or project facts across sessions. Do not store secrets.",
   ];
   if (config.runMode === "plan") {
     lines.push(
@@ -61,6 +63,10 @@ export function buildSystemPrompt(config: AgentConfig, skills?: SkillIndex): str
   const agents = loadAgentsMd(config.workspace);
   if (agents) {
     parts.push("", "## Project instructions", agents);
+  }
+  const memory = formatMemoryPrompt(config.workspace);
+  if (memory) {
+    parts.push("", memory);
   }
   const catalog = skills?.catalog();
   if (catalog) {

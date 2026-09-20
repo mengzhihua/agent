@@ -8,6 +8,7 @@ export { AgentHost } from "./host.js";
 export { loadSkills } from "./context/skills.js";
 export { loadAgentsMd } from "./context/agents-md.js";
 export { injectAttachments, parseAtMentions } from "./context/attach.js";
+export { loadMemory, appendMemory } from "./context/memory.js";
 export { initWorkspace } from "./init.js";
 export { loadIgnoreMatcher } from "./ignore.js";
 export { inspectGit } from "./git-context.js";
