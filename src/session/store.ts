@@ -46,6 +46,25 @@ export class SessionStore {
     if (fs.existsSync(file)) fs.unlinkSync(file);
   }
 
+  inspect(sessionId: string): SessionInspect {
+    const events = this.read(sessionId);
+    const meta = events.find((event) => event.type === "session_meta");
+    if (!meta || meta.type !== "session_meta") {
+      throw new Error(`session not found: ${sessionId}`);
+    }
+    const last = events.at(-1);
+    const firstUser = events.find((event) => event.type === "user");
+    return {
+      id: sessionId,
+      timestamp: last?.timestamp ?? meta.timestamp,
+      cwd: meta.cwd,
+      model: meta.model,
+      provider: meta.provider,
+      title: firstUser && firstUser.type === "user" ? sessionTitle(firstUser.text) : undefined,
+      events,
+    };
+  }
+
   list(): SessionListRow[] {
     ensureDir(this.dir);
     const files = fs.readdirSync(this.dir).filter((name) => name.endsWith(".jsonl"));
@@ -80,6 +99,16 @@ export interface SessionListRow {
   cwd: string;
   model: string;
   title?: string;
+}
+
+export interface SessionInspect {
+  id: string;
+  timestamp: string;
+  cwd: string;
+  model: string;
+  provider: string;
+  title?: string;
+  events: SessionEvent[];
 }
 
 export function sessionTitle(text: string): string {
