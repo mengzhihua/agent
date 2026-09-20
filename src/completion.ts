@@ -29,7 +29,7 @@ _agent() {
     'doctor:Show install and runtime diagnostics'
     'update:Re-run the one-click installer'
     'uninstall:Remove shims and checkout'
-    'serve:HTTP server (Spring-style /v1 and /actuator/health)'
+    'serve:HTTP + web console (SSE /v1/prompt)'
     'init:Scaffold AGENTS.md and .agent/'
     'login:Save API keys to ~/.agent/credentials.json'
     'logout:Remove saved API keys'

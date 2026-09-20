@@ -1,6 +1,8 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { AgentHost } from "./host.js";
-import { collectJsonResult, formatSessionDelete, formatSessionList, formatSessionShow } from "./output.js";
+import { doctorReport } from "./doctor.js";
+import { collectJsonResult, encodeJsonResult, encodeStreamLine, formatSessionDelete, formatSessionList, formatSessionShow } from "./output.js";
+import { loadConsoleHtml } from "./web/load.js";
 import { autoApprover } from "./permissions/policy.js";
 import { createProvider } from "./provider/factory.js";
 import { runningAsSea } from "./sea.js";
@@ -53,7 +55,11 @@ export async function startAgentServer(opts: ServeOptions): Promise<StartedServe
   };
 
   const server = createServer((req, res) => {
-    serialize(() => handleRequest(req, res, { getHost, store, token })).catch((err) => {
+    const method = (req.method || "GET").toUpperCase();
+    const mutating = method === "POST" || method === "PUT" || method === "PATCH" || method === "DELETE";
+    const run = () => handleRequest(req, res, { getHost, store, token });
+    const task = mutating ? serialize(run) : run();
+    Promise.resolve(task).catch((err) => {
       if (!res.writableEnded) {
         sendJson(res, 500, { error: redactSecrets(err instanceof Error ? err.message : String(err)) });
       }
@@ -96,7 +102,12 @@ async function handleRequest(
     res.end();
     return;
   }
-  const open = url.pathname === "/v1/health" || url.pathname === "/actuator/health" || url.pathname === "/";
+  const open =
+    url.pathname === "/v1/health" ||
+    url.pathname === "/actuator/health" ||
+    url.pathname === "/" ||
+    url.pathname === "/ui" ||
+    url.pathname === "/v1";
   if (ctx.token && !open && !authorized(req, ctx.token)) {
     sendJson(res, 401, { error: "unauthorized" });
     return;
@@ -110,12 +121,26 @@ async function handleRequest(
     });
     return;
   }
-  if (method === "GET" && url.pathname === "/") {
+  if (method === "GET" && (url.pathname === "/" || url.pathname === "/ui")) {
+    const html = loadConsoleHtml();
+    res.writeHead(200, {
+      "content-type": "text/html; charset=utf-8",
+      "content-length": Buffer.byteLength(html),
+      ...corsHeaders(),
+    });
+    res.end(html);
+    return;
+  }
+  if (method === "GET" && url.pathname === "/v1") {
     sendJson(res, 200, {
       name: "agent",
       version: packageVersion(),
-      endpoints: ["/v1/health", "/v1/prompt", "/v1/sessions", "/actuator/health"],
+      endpoints: ["/v1/health", "/v1/doctor", "/v1/prompt", "/v1/sessions", "/actuator/health", "/ui"],
     });
+    return;
+  }
+  if (method === "GET" && url.pathname === "/v1/doctor") {
+    sendJson(res, 200, { text: doctorReport() });
     return;
   }
   if (method === "POST" && url.pathname === "/v1/prompt") {
@@ -137,6 +162,15 @@ async function handleRequest(
     req.on("close", () => {
       if (!res.writableEnded) controller.abort();
     });
+    const stream = wantsStream(req, body);
+    if (stream) {
+      res.writeHead(200, {
+        "content-type": "text/event-stream; charset=utf-8",
+        "cache-control": "no-cache",
+        connection: "keep-alive",
+        ...corsHeaders(),
+      });
+    }
     const events = [];
     for await (const event of agent.prompt(
       sessionId,
@@ -145,8 +179,15 @@ async function handleRequest(
       extraFiles.length ? { extraFiles } : undefined,
     )) {
       events.push(event);
+      if (stream) res.write(`data: ${encodeStreamLine(sessionId, event)}\n\n`);
     }
-    sendJson(res, 200, collectJsonResult(sessionId, events));
+    const result = collectJsonResult(sessionId, events);
+    if (stream) {
+      res.write(`data: ${encodeJsonResult(result)}\n\n`);
+      res.end();
+      return;
+    }
+    sendJson(res, 200, result);
     return;
   }
   if (method === "GET" && url.pathname === "/v1/sessions") {
@@ -182,6 +223,12 @@ async function handleRequest(
     return;
   }
   sendJson(res, 404, { error: "not found" });
+}
+
+function wantsStream(req: IncomingMessage, body: Record<string, unknown>): boolean {
+  if (body.stream === true) return true;
+  const accept = String(req.headers.accept ?? "");
+  return accept.includes("text/event-stream") || accept.includes("application/x-ndjson");
 }
 
 function authorized(req: IncomingMessage, token: string): boolean {

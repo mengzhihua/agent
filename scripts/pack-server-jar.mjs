@@ -98,6 +98,12 @@ export async function packServerJar(opts = {}) {
   const javaRoot = path.join(from, "server-java");
   if (!fs.existsSync(path.join(javaRoot, "pom.xml"))) throw new Error("missing server-java/pom.xml");
   copyDir(javaRoot, stage);
+  const consoleHtml = path.join(from, "src", "web", "console.html");
+  if (fs.existsSync(consoleHtml)) {
+    const staticDir = path.join(stage, "src/main/resources/static");
+    fs.mkdirSync(staticDir, { recursive: true });
+    fs.copyFileSync(consoleHtml, path.join(staticDir, "index.html"));
+  }
   let pom = fs.readFileSync(path.join(stage, "pom.xml"), "utf8");
   pom = pom.replace(/(<artifactId>agent-server<\/artifactId>\s*<version>)[^<]+/, `$1${version}`);
   fs.writeFileSync(path.join(stage, "pom.xml"), pom);

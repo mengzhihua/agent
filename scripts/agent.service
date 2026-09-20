@@ -1,0 +1,16 @@
+[Unit]
+Description=agent HTTP server
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/agent serve --host 0.0.0.0 --port 8080
+Restart=on-failure
+RestartSec=2
+Environment=AGENT_SERVE_HOST=0.0.0.0
+# Environment=AGENT_SERVE_TOKEN=
+# Environment=OPENAI_API_KEY=
+WorkingDirectory=/var/lib/agent
+
+[Install]
+WantedBy=multi-user.target

@@ -133,9 +133,11 @@ async function bundleCli(from, version, workDir) {
   return outfile;
 }
 
-function writeBlob(entry, workDir) {
+function writeBlob(entry, workDir, from) {
   const configPath = path.join(workDir, "sea-config.json");
   const blob = path.join(workDir, "sea-prep.blob");
+  const consoleHtml = path.join(from, "src", "web", "console.html");
+  const assets = fs.existsSync(consoleHtml) ? { "console.html": consoleHtml } : undefined;
   fs.writeFileSync(
     configPath,
     `${JSON.stringify(
@@ -145,6 +147,7 @@ function writeBlob(entry, workDir) {
         disableExperimentalSEAWarning: true,
         useSnapshot: false,
         useCodeCache: false,
+        assets,
       },
       null,
       2,
@@ -202,7 +205,7 @@ export async function packNative(opts = {}) {
   const files = [];
   try {
     const entry = await bundleCli(from, version, workDir);
-    const blob = writeBlob(entry, workDir);
+    const blob = writeBlob(entry, workDir, from);
     for (const target of targets) {
       const nodeBin = await nodeBinaryFor(target, nodeVersion, cacheDir);
       const outName = `agent-${target.id}${target.ext}`;

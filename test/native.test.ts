@@ -84,6 +84,9 @@ describe("native SEA binary", () => {
       });
       const health = await waitForHealth(`${line}/v1/health`);
       expect(health).toMatchObject({ status: "UP", version: packed.version, runtime: "sea" });
+      const page = await fetch(`${line}/`);
+      expect(page.headers.get("content-type")).toContain("text/html");
+      expect(await page.text()).toContain("web console");
     } finally {
       child.kill("SIGTERM");
     }

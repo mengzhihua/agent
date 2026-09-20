@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>agent</title>
+  <style>
+    :root { color-scheme: dark; --bg:#101216; --panel:#1a1e26; --line:#2a3140; --text:#e8ecf1; --muted:#8b95a7; --acc:#6ee7b7; --err:#fca5a5; }
+    * { box-sizing: border-box; }
+    body { margin: 0; font: 14px/1.45 ui-sans-serif, system-ui, sans-serif; background: var(--bg); color: var(--text); height: 100vh; display: flex; }
+    aside { width: 240px; border-right: 1px solid var(--line); background: var(--panel); padding: 16px; display: flex; flex-direction: column; gap: 12px; }
+    main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+    h1 { font-size: 16px; margin: 0; }
+    .muted { color: var(--muted); font-size: 12px; }
+    button, input, textarea { font: inherit; color: inherit; background: #11151c; border: 1px solid var(--line); border-radius: 8px; }
+    button { padding: 8px 12px; cursor: pointer; background: #173328; border-color: #245c45; color: var(--acc); }
+    button.ghost { background: transparent; color: var(--text); border-color: var(--line); }
+    input { width: 100%; padding: 8px; }
+    #log { flex: 1; overflow: auto; padding: 20px 24px; white-space: pre-wrap; }
+    .tool { color: var(--muted); }
+    .err { color: var(--err); }
+    form { display: flex; gap: 8px; padding: 12px 16px; border-top: 1px solid var(--line); }
+    textarea { flex: 1; min-height: 64px; resize: vertical; padding: 8px; }
+    #sessions { flex: 1; overflow: auto; display: flex; flex-direction: column; gap: 4px; }
+    .sid { display: block; padding: 6px 8px; border-radius: 6px; color: var(--muted); text-decoration: none; }
+    .sid.active { background: #11151c; color: var(--text); }
+  </style>
+</head>
+<body>
+  <aside>
+    <h1>agent</h1>
+    <div class="muted" id="meta">web console</div>
+    <input id="token" placeholder="Bearer token（可选）" />
+    <input id="workspace" placeholder="workspace 路径（可选）" />
+    <button class="ghost" id="new" type="button">新会话</button>
+    <div id="sessions"></div>
+    <button class="ghost" id="doctor" type="button">doctor</button>
+  </aside>
+  <main>
+    <div id="log"></div>
+    <form id="form">
+      <textarea id="prompt" placeholder="输入任务，Enter 发送，Shift+Enter 换行"></textarea>
+      <button type="submit">发送</button>
+    </form>
+  </main>
+  <script>
+    const $ = (id) => document.getElementById(id);
+    const state = { sessionId: "", token: localStorage.getItem("agentToken") || "" };
+    $("token").value = state.token;
+    $("token").addEventListener("change", () => {
+      state.token = $("token").value.trim();
+      localStorage.setItem("agentToken", state.token);
+    });
+    function headers(extra) {
+      const h = Object.assign({ "content-type": "application/json" }, extra || {});
+      if (state.token) {
+        h.authorization = "Bearer " + state.token;
+        h["x-agent-token"] = state.token;
+      }
+      return h;
+    }
+    function line(text, cls) {
+      const div = document.createElement("div");
+      if (cls) div.className = cls;
+      div.textContent = text;
+      $("log").appendChild(div);
+      $("log").scrollTop = $("log").scrollHeight;
+      return div;
+    }
+    async function api(path, opts) {
+      const res = await fetch(path, opts);
+      const text = await res.text();
+      let body = null;
+      try { body = text ? JSON.parse(text) : null; } catch { body = text; }
+      if (!res.ok) throw new Error((body && body.error) || text || res.status);
+      return body;
+    }
+    async function refreshMeta() {
+      const health = await fetch("/v1/health").then((r) => r.json());
+      $("meta").textContent = "v" + health.version + " · " + health.runtime;
+    }
+    async function refreshSessions() {
+      try {
+        const rows = await api("/v1/sessions", { headers: headers() });
+        $("sessions").innerHTML = "";
+        (rows || []).forEach((row) => {
+          const a = document.createElement("a");
+          a.href = "#";
+          a.className = "sid" + (row.id === state.sessionId ? " active" : "");
+          a.textContent = (row.title || row.id).slice(0, 40);
+          a.onclick = async (ev) => {
+            ev.preventDefault();
+            state.sessionId = row.id;
+            const shown = await api("/v1/sessions/" + row.id, { headers: headers() });
+            $("log").innerHTML = "";
+            (shown.events || []).forEach((event) => {
+              if (event.type === "user") line("you  " + event.text);
+              if (event.type === "assistant") line(event.text);
+            });
+            refreshSessions();
+          };
+          $("sessions").appendChild(a);
+        });
+      } catch (err) {
+        $("sessions").textContent = err.message;
+      }
+    }
+    $("new").onclick = () => { state.sessionId = ""; $("log").innerHTML = ""; refreshSessions(); };
+    $("doctor").onclick = async () => {
+      const body = await api("/v1/doctor", { headers: headers() });
+      line(body.text || JSON.stringify(body, null, 2), "tool");
+    };
+    $("form").onsubmit = async (ev) => {
+      ev.preventDefault();
+      const prompt = $("prompt").value.trim();
+      if (!prompt) return;
+      $("prompt").value = "";
+      line("you  " + prompt);
+      const acc = document.createElement("div");
+      $("log").appendChild(acc);
+      const payload = { prompt, stream: true, sessionId: state.sessionId || undefined, workspace: $("workspace").value.trim() || undefined };
+      const res = await fetch("/v1/prompt", {
+        method: "POST",
+        headers: headers({ accept: "text/event-stream" }),
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) {
+        line("error  " + (await res.text()), "err");
+        return;
+      }
+      const reader = res.body.getReader();
+      const dec = new TextDecoder();
+      let buf = "";
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buf += dec.decode(value, { stream: true });
+        const parts = buf.split("\n\n");
+        buf = parts.pop() || "";
+        for (const part of parts) {
+          const data = part.split("\n").filter((x) => x.startsWith("data:")).map((x) => x.slice(5).trim()).join("");
+          if (!data) continue;
+          let event;
+          try { event = JSON.parse(data); } catch { continue; }
+          if (event.sessionId) state.sessionId = event.sessionId;
+          if (event.type === "text-delta") acc.textContent += event.text;
+          else if (event.type === "tool-start") line("→ " + event.name, "tool");
+          else if (event.type === "tool-end") line((event.isError ? "✗ " : "✓ ") + event.name, "tool");
+          else if (event.type === "error") line("error  " + event.message, "err");
+          else if (event.type === "result" && !acc.textContent) acc.textContent = event.text || "";
+        }
+      }
+      $("log").scrollTop = $("log").scrollHeight;
+      refreshSessions();
+    };
+    $("prompt").addEventListener("keydown", (ev) => {
+      if (ev.key === "Enter" && !ev.shiftKey) { ev.preventDefault(); $("form").requestSubmit(); }
+    });
+    refreshMeta().catch(() => {});
+    refreshSessions();
+  </script>
+</body>
+</html>

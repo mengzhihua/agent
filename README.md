@@ -2,7 +2,7 @@
 
 通用 agent 软件：一个极简的模型–工具循环，外面套 harness。
 
-当前进度：**期 26 — 原生二进制与 Spring Boot 服务端**。
+当前进度：**期 27 — Web 控制台与流式 HTTP**。
 
 - [行业研究](docs/industry-agent-research.md) — Codex、Claude Code、Grok Build、Devin、Cursor、Gemini CLI、Manus、OpenHands 等怎么做，以及通用 harness 的收敛形态
 - [期 0](docs/phase-0.md)
@@ -32,6 +32,7 @@
 - [期 24](docs/phase-24.md)
 - [期 25](docs/phase-25.md)
 - [期 26](docs/phase-26.md)
+- [期 27](docs/phase-27.md)
 
 ## 研究结论（极简）
 
@@ -76,13 +77,14 @@ tar -xzf agent-linux-x64.tar.gz
 ./agent -V
 
 # 服务端
-./agent serve --port 8080
-java -jar agent-server.jar   # 同样提供 /v1/health 与 POST /v1/prompt
+./agent serve --port 8080          # 浏览器打开 http://127.0.0.1:8080
+java -jar agent-server.jar         # 同一套 /v1 API + 页面
+docker build -t agent . && docker run --rm -p 8080:8080 -e OPENAI_API_KEY agent
 ```
 
 装好后执行 `agent doctor`。新开一个终端即可直接运行 `agent`。之后可用 `agent update` / `agent uninstall`。
 
-指定版本：`AGENT_REF=v0.27.0`。要从源码装 main：`AGENT_REF=main`（此时需要 Node 22）。
+指定版本：`AGENT_REF=v0.28.0`。要从源码装 main：`AGENT_REF=main`（此时需要 Node 22）。
 
 macOS 若 Gatekeeper 拦截未公证二进制：`xattr -cr agent`。
 
@@ -123,7 +125,7 @@ agent session show <id>
 agent session export <id>
 agent session delete <id>
 agent memory show
-agent serve --port 8080
+agent serve --port 8080  # 浏览器打开 / ；SSE：Accept text/event-stream
 agent --resume <id> -p "continue"
 agent acp             # JSON-RPC（NDJSON 或 Content-Length；ask 时向客户端要权限；fs/terminal/MCP 走编辑器）
 agent doctor          # 检查 node / sandbox / 浏览器 / PATH / 配置 / git / auth
