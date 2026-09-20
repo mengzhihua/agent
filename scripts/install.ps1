@@ -1,9 +1,11 @@
 # One-click install for Windows PowerShell.
+# Prefers the latest GitHub Release tarball (compiled dist, Node 22 only).
 #   irm https://raw.githubusercontent.com/mengzhihua/agent/main/scripts/install.ps1 | iex
+# Source from main instead: $env:AGENT_REF = "main"; irm ... | iex
 $ErrorActionPreference = "Stop"
 
 $Repo = if ($env:AGENT_REPO) { $env:AGENT_REPO } else { "mengzhihua/agent" }
-$Ref = if ($env:AGENT_REF) { $env:AGENT_REF } else { "main" }
+$Ref = if ($env:AGENT_REF) { $env:AGENT_REF } else { "latest" }
 $Prefix = if ($env:AGENT_PREFIX) { $env:AGENT_PREFIX } else { Join-Path $HOME ".agent" }
 $Src = Join-Path $Prefix "src"
 
@@ -14,7 +16,7 @@ function Assert-Command($Name) {
 }
 
 Assert-Command node
-Assert-Command npm
+Assert-Command tar
 
 $major = [int](& node -p "Number(process.versions.node.split('.')[0])")
 if ($major -lt 22) {
@@ -31,19 +33,42 @@ if ($args -contains "--uninstall") {
   return
 }
 
+function Save-Url($Url, $Dest) {
+  Invoke-WebRequest -Uri $Url -OutFile $Dest -UseBasicParsing
+}
+
 New-Item -ItemType Directory -Force -Path $Prefix | Out-Null
 $tmp = Join-Path $env:TEMP ("agent-install-" + [guid]::NewGuid().ToString())
 New-Item -ItemType Directory -Force -Path $tmp | Out-Null
 try {
-  $zip = Join-Path $tmp "src.zip"
-  $url = "https://github.com/$Repo/archive/refs/heads/$Ref.zip"
-  Write-Host "Downloading $Repo@$Ref ..."
-  try {
-    Invoke-WebRequest -Uri $url -OutFile $zip -UseBasicParsing
-  } catch {
-    Invoke-WebRequest -Uri "https://github.com/$Repo/archive/refs/tags/$Ref.zip" -OutFile $zip -UseBasicParsing
+  $archive = Join-Path $tmp "src.tgz"
+  if ($Ref -eq "main" -or $Ref -eq "master") {
+    Write-Host "Downloading $Repo@$Ref source ..."
+    Save-Url "https://github.com/$Repo/archive/refs/heads/$Ref.tar.gz" $archive
+  } elseif ($Ref -eq "latest") {
+    Write-Host "Downloading latest GitHub Release ..."
+    try {
+      Save-Url "https://github.com/$Repo/releases/latest/download/agent.tgz" $archive
+    } catch {
+      Write-Host "No release asset yet; installing from main source."
+      Save-Url "https://github.com/$Repo/archive/refs/heads/main.tar.gz" $archive
+    }
+  } else {
+    Write-Host "Downloading $Repo@$Ref ..."
+    $tag = $Ref
+    if (-not $tag.StartsWith("v")) { $tag = "v$Ref" }
+    try {
+      Save-Url "https://github.com/$Repo/releases/download/$tag/agent.tgz" $archive
+    } catch {
+      try {
+        Save-Url "https://github.com/$Repo/archive/refs/tags/$tag.tar.gz" $archive
+      } catch {
+        Save-Url "https://github.com/$Repo/archive/refs/heads/$Ref.tar.gz" $archive
+      }
+    }
   }
-  Expand-Archive -Path $zip -DestinationPath $tmp -Force
+  & tar -xzf $archive -C $tmp
+  if ($LASTEXITCODE -ne 0) { throw "tar extract failed" }
   $extract = Get-ChildItem -Directory $tmp | Select-Object -First 1
   if (-not $extract) { throw "archive did not contain a directory" }
   if (Test-Path $Src) { Remove-Item -Recurse -Force $Src }
@@ -53,6 +78,12 @@ try {
   Remove-Item -Recurse -Force $tmp -ErrorAction SilentlyContinue
 }
 
-& node (Join-Path $Src "scripts\setup.mjs") --from $Src --prefix $Prefix
+$setupArgs = @((Join-Path $Src "scripts\setup.mjs"), "--from", $Src, "--prefix", $Prefix)
+if (Test-Path (Join-Path $Src "dist\cli.js")) {
+  $setupArgs += "--skip-build"
+} else {
+  Assert-Command npm
+}
+& node @setupArgs
 Write-Host ""
 Write-Host "Windows install complete. Open a new terminal so the user PATH picks up agent."

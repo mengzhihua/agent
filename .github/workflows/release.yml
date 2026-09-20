@@ -1,0 +1,42 @@
+name: release
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx tsc --noEmit
+      - run: npm test
+      - run: npm run build
+      - run: node scripts/pack-release.mjs
+      - id: ver
+        run: echo "version=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.ver.outputs.version }}
+        run: |
+          set -euo pipefail
+          TAG="v${VERSION}"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release $TAG exists; uploading assets."
+            gh release upload "$TAG" dist-release/agent.tgz dist-release/agent-${VERSION}.tgz dist-release/SHA256SUMS dist-release/NOTES.md --clobber
+          else
+            gh release create "$TAG" dist-release/agent.tgz dist-release/agent-${VERSION}.tgz dist-release/SHA256SUMS dist-release/NOTES.md \
+              --title "agent ${TAG}" \
+              --notes-file dist-release/NOTES.md
+          fi

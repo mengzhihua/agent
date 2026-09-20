@@ -2,7 +2,7 @@
 
 通用 agent 软件：一个极简的模型–工具循环，外面套 harness。
 
-当前进度：**期 24 — 跨会话 MEMORY.md**。
+当前进度：**期 25 — GitHub Release 成品包**。
 
 - [行业研究](docs/industry-agent-research.md) — Codex、Claude Code、Grok Build、Devin、Cursor、Gemini CLI、Manus、OpenHands 等怎么做，以及通用 harness 的收敛形态
 - [期 0](docs/phase-0.md)
@@ -30,6 +30,7 @@
 - [期 22](docs/phase-22.md)
 - [期 23](docs/phase-23.md)
 - [期 24](docs/phase-24.md)
+- [期 25](docs/phase-25.md)
 
 ## 研究结论（极简）
 
@@ -43,7 +44,7 @@
 
 ## 安装（macOS / Linux / Windows）
 
-需要本机 [Node.js 22+](https://nodejs.org/)（不需要 Docker）。
+需要本机 [Node.js 22+](https://nodejs.org/)（不需要 Docker、npm 或 TypeScript）。安装脚本默认拉 **GitHub Release** 里编好的 `agent.tgz`。
 
 macOS / Linux：
 
@@ -57,7 +58,11 @@ Windows PowerShell：
 irm https://raw.githubusercontent.com/mengzhihua/agent/main/scripts/install.ps1 | iex
 ```
 
-装好后执行 `agent doctor`。新开一个终端即可直接运行 `agent`（安装脚本会改用户 PATH）。之后可用 `agent update` / `agent uninstall`。
+装好后执行 `agent doctor`。新开一个终端即可直接运行 `agent`（安装脚本会改用户 PATH）。之后可用 `agent update`（同样跟最新 Release）/ `agent uninstall`。
+
+指定版本：`AGENT_REF=v0.26.0`。要从源码装 main：`AGENT_REF=main`。
+
+发布页：https://github.com/mengzhihua/agent/releases
 
 默认配置写在 `~/.agent/config.json`（命令行和环境变量优先）。补全：
 
