@@ -4,6 +4,7 @@ import type { AgentHost } from "../host.js";
 import { assembleMessages } from "../loop/assemble.js";
 import { autoApprover } from "../permissions/policy.js";
 import { sessionTitle, type SessionListRow } from "../session/store.js";
+import { formatMemoryShow, loadMemory } from "../context/memory.js";
 import type { AgentConfig, ApprovalMode, ApprovalRequest, LoopEvent, Risk, RunMode, SessionEvent, ToolDiff, ToolLocation } from "../types.js";
 import { locationsFromToolArgs } from "../tools/types.js";
 import { estimateTokens } from "../workspace.js";
@@ -36,6 +37,7 @@ export const AVAILABLE_COMMANDS = [
   { name: "plan", description: "Switch to plan mode: read-only research, then update_plan.", input: { hint: "what to plan" } },
   { name: "execute", description: "Switch to execute mode: edit files and run tools.", input: { hint: "task" } },
   { name: "skills", description: "List available skills for this workspace." },
+  { name: "memory", description: "Show durable user and project memory." },
   { name: "yes", description: "Auto-approve write, shell, and network tools." },
   { name: "ask", description: "Ask before write, shell, or network tools." },
 ] as const;
@@ -551,6 +553,16 @@ export function applySlashCommand(
         update: {
           sessionUpdate: "agent_message_chunk",
           content: { type: "text", text: names.join("\n") || "(no skills)" },
+        },
+      });
+      return "done";
+    }
+    case "memory": {
+      notify({
+        sessionId,
+        update: {
+          sessionUpdate: "agent_message_chunk",
+          content: { type: "text", text: formatMemoryShow(loadMemory(host.config.workspace), "text") },
         },
       });
       return "done";

@@ -14,6 +14,7 @@ import { runAcpStdio } from "./protocol/acp.js";
 import type { AskUserFn } from "./runtime.js";
 import { applyLogin, applyLogout, parseLoginProvider, redactSecrets } from "./credentials.js";
 import { formatInitResult, initWorkspace } from "./init.js";
+import { formatMemoryShow, loadMemory, parseMemoryScope } from "./context/memory.js";
 import {
   collectJsonResult,
   encodeJsonResult,
@@ -35,6 +36,7 @@ function usage(): string {
        agent acp
        agent eval <file-or-dir>
        agent session list|show|delete|export [id]
+       agent memory [show]
        agent doctor
        agent config
        agent init [dir]
@@ -72,7 +74,7 @@ Keys: env vars override ~/.agent/credentials.json (agent login)
 Install (macOS/Linux): curl -fsSL https://raw.githubusercontent.com/mengzhihua/agent/main/scripts/install.sh | bash
 Install (Windows):     irm https://raw.githubusercontent.com/mengzhihua/agent/main/scripts/install.ps1 | iex
 
-Project files: AGENTS.md, .agentignore, .agent/skills/*/SKILL.md, .agent/mcp.json, .agent/hooks.json
+Project files: AGENTS.md, .agentignore, .agent/skills/*/SKILL.md, .agent/mcp.json, .agent/hooks.json, .agent/MEMORY.md
 Deliverables land in <workspace>/artifacts (or AGENT_ARTIFACTS).
 Shell is OS-sandboxed with bubblewrap on Linux when AGENT_SANDBOX=auto and bwrap is installed.
 On macOS/Windows, sandbox stays none unless a Linux bwrap backend is present.
@@ -148,6 +150,11 @@ async function main(): Promise<void> {
 
   if (process.argv[2] === "session") {
     runSessionCommand(process.argv.slice(3));
+    return;
+  }
+
+  if (process.argv[2] === "memory") {
+    runMemoryCommand(process.argv.slice(3));
     return;
   }
 
@@ -315,6 +322,36 @@ function runSessionCommand(argv: string[]): void {
   throw new Error("usage: agent session list|show|delete|export [id]");
 }
 
+function runMemoryCommand(argv: string[]): void {
+  const { values, positionals } = parseArgs({
+    args: argv,
+    allowPositionals: true,
+    options: {
+      "output-format": { type: "string" },
+      scope: { type: "string" },
+      workspace: { type: "string", short: "w" },
+    },
+  });
+  const action = positionals[0] ?? "show";
+  if (action !== "show") throw new Error("usage: agent memory [show]");
+  const config = loadConfig({ workspace: values.workspace });
+  const format = parseOutputFormat(values["output-format"]);
+  const machine = format === "text" ? "text" : "json";
+  const files = loadMemory(config.workspace);
+  if (values.scope) {
+    const scope = parseMemoryScope(values.scope);
+    if (machine === "json") {
+      const pathName = scope === "user" ? files.userPath : files.projectPath;
+      const text = scope === "user" ? files.user : files.project;
+      output.write(`${JSON.stringify({ type: "memory", scope, path: pathName, text })}\n`);
+      return;
+    }
+    output.write(`${scope}  ${scope === "user" ? files.userPath : files.projectPath}\n${(scope === "user" ? files.user : files.project) || "(empty)"}\n`);
+    return;
+  }
+  output.write(`${formatMemoryShow(files, machine)}\n`);
+}
+
 async function interactive(host: AgentHost, sessionId: string): Promise<void> {
   const rl = createInterface({ input, output, terminal: true });
   console.log("Type a task. /help for commands. Ctrl+C cancels the current turn.");
@@ -335,11 +372,15 @@ async function interactive(host: AgentHost, sessionId: string): Promise<void> {
       if (!line) continue;
       if (line === "/quit" || line === "/exit") break;
       if (line === "/help") {
-        console.log("/quit  /yes  /ask  /plan  /execute  /skills  /session");
+        console.log("/quit  /yes  /ask  /plan  /execute  /skills  /session  /memory");
         continue;
       }
       if (line === "/session") {
         console.log(sessionId);
+        continue;
+      }
+      if (line === "/memory") {
+        console.log(formatMemoryShow(loadMemory(host.config.workspace), "text"));
         continue;
       }
       if (line === "/skills") {

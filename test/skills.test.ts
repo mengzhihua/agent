@@ -71,6 +71,7 @@ describe("skills and AGENTS.md", () => {
       "browser",
       "artifact",
       "ask_user",
+      "memory",
       "skill",
       "update_plan",
       "task",

@@ -13,7 +13,7 @@
 5. ACP `promptCapabilities.embeddedContext=true`；`resource_link` 读盘，`resource` 用客户端带来的 text
 6. 附件写进 transcript 的 user 消息，system prompt 前缀不变
 
-不做：图片/音频、OAuth、SSE、布尔 ACP config、累计 cost、Docker workspace、云端 VM、Playwright、npm 公有源、单文件原生二进制。
+不做：图片/音频、OAuth、SSE、布尔 ACP config、累计 cost、Docker workspace、云端 VM、Playwright、npm 公有源、单文件原生二进制。跨会话记忆见 [期 24](phase-24.md)。
 
 ## 怎么跑
 

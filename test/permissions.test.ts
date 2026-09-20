@@ -66,8 +66,17 @@ describe("permissions", () => {
     expect(open.decision).toBe("allow");
     const click = await decidePermission("browser", { action: "click", ref: "e1" }, "auto", autoApprover(), "plan");
     expect(click.decision).toBe("deny");
-    const list = await decidePermission("artifact", { action: "list" }, "auto", autoApprover(), "plan");
     expect(list.decision).toBe("allow");
+    const memoryGet = await decidePermission("memory", { action: "get" }, "auto", autoApprover(), "plan");
+    expect(memoryGet.decision).toBe("allow");
+    const memoryWrite = await decidePermission(
+      "memory",
+      { action: "append", scope: "project", text: "x" },
+      "auto",
+      autoApprover(),
+      "plan",
+    );
+    expect(memoryWrite.decision).toBe("deny");
     const artifactSave = await decidePermission(
       "artifact",
       { action: "save", content: "x", filename: "x.txt" },

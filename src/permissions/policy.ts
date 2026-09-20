@@ -11,6 +11,7 @@ export const TOOL_RISK: Record<string, Risk> = {
   browser: "exec",
   artifact: "write",
   ask_user: "read",
+  memory: "write",
   skill: "read",
   update_plan: "read",
   task: "exec",
@@ -25,6 +26,9 @@ export function riskFor(tool: string, args?: unknown): Risk {
   if (tool === "ask_user") return "read";
   if (tool === "artifact") {
     return action === "list" || action === "get" ? "read" : "write";
+  }
+  if (tool === "memory") {
+    return action === "get" || action === undefined ? "read" : "write";
   }
   if (tool === "browser") {
     if (action === "open" || action === "snapshot" || action === "screenshot" || action === "close") {
@@ -77,6 +81,11 @@ export function summarizeArgs(tool: string, args: unknown): string {
   if (tool === "web_fetch" && typeof record.url === "string") return `web_fetch: ${record.url}`;
   if (tool === "artifact") return `artifact ${typeof record.action === "string" ? record.action : ""}`.trim();
   if (tool === "ask_user" && typeof record.question === "string") return `ask_user: ${record.question}`;
+  if (tool === "memory") {
+    const action = typeof record.action === "string" ? record.action : "memory";
+    const scope = typeof record.scope === "string" ? record.scope : "";
+    return `memory ${action}${scope ? ` ${scope}` : ""}`.trim();
+  }
   if (tool.startsWith("mcp__")) return tool;
   return `${tool} ${JSON.stringify(args)}`;
 }

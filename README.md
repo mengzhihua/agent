@@ -2,7 +2,7 @@
 
 通用 agent 软件：一个极简的模型–工具循环，外面套 harness。
 
-当前进度：**期 23 — 把 @path / --file 和 ACP 附件内联进 prompt**。
+当前进度：**期 24 — 跨会话 MEMORY.md**。
 
 - [行业研究](docs/industry-agent-research.md) — Codex、Claude Code、Grok Build、Devin、Cursor、Gemini CLI、Manus、OpenHands 等怎么做，以及通用 harness 的收敛形态
 - [期 0](docs/phase-0.md)
@@ -29,6 +29,7 @@
 - [期 21](docs/phase-21.md)
 - [期 22](docs/phase-22.md)
 - [期 23](docs/phase-23.md)
+- [期 24](docs/phase-24.md)
 
 ## 研究结论（极简）
 
@@ -93,6 +94,7 @@ agent session list
 agent session show <id>
 agent session export <id>
 agent session delete <id>
+agent memory show
 agent --resume <id> -p "continue"
 agent acp             # JSON-RPC（NDJSON 或 Content-Length；ask 时向客户端要权限；fs/terminal/MCP 走编辑器）
 agent doctor          # 检查 node / sandbox / 浏览器 / PATH / 配置 / git / auth
@@ -103,7 +105,7 @@ agent logout          # 删除保存的 key
 agent update          # 重跑一键安装
 agent uninstall       # 移除 shim 和 PATH
 agent completion bash # 输出 bash 补全
-agent                 # 交互（/plan /execute /skills；ask_user 走终端，ACP 走 elicitation）
+agent                 # 交互（/plan /execute /skills /memory；ask_user 走终端，ACP 走 elicitation）
 ```
 
 仓库内开发也可以：`npm run agent -- -y -p "..."`（走编译后的 `dist/cli.js`）。
@@ -112,7 +114,7 @@ agent                 # 交互（/plan /execute /skills；ask_user 走终端，A
 
 ## 工具
 
-内置（顺序固定）：`read` `grep` `glob` `apply_patch` `shell` `web_search` `web_fetch` `browser` `artifact` `ask_user` `skill` `update_plan` `task`
+内置（顺序固定）：`read` `grep` `glob` `apply_patch` `shell` `web_search` `web_fetch` `browser` `artifact` `ask_user` `memory` `skill` `update_plan` `task`
 
 MCP 工具以 `mcp__<server>__<tool>` 接在后面。
 
@@ -125,6 +127,7 @@ MCP 工具以 `mcp__<server>__<tool>` 接在后面。
 | `.agent/skills/*/SKILL.md` | 按需加载的技能 |
 | `.agent/mcp.json` | MCP 服务器 |
 | `.agent/hooks.json` | PreToolUse / PostToolUse / Stop |
+| `.agent/MEMORY.md` | 项目记忆，注入 system prompt；用户记忆在 `~/.agent/MEMORY.md` |
 
 会话存在 `$AGENT_HOME/sessions`（默认 `~/.agent/sessions`）。
 默认配置 `$AGENT_HOME/config.json`。
