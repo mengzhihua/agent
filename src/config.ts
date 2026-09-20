@@ -51,6 +51,7 @@ export function loadConfig(overrides: Partial<AgentConfig> = {}): AgentConfig {
     sessionDir: overrides.sessionDir ?? defaultSessionDir(),
     shellTimeoutMs: overrides.shellTimeoutMs ?? 60_000,
     shellOutputLimit: overrides.shellOutputLimit ?? 32_768,
+    toolOutputLimit: overrides.toolOutputLimit ?? Number(process.env.AGENT_TOOL_OUTPUT_LIMIT ?? file.toolOutputLimit ?? 40_000),
     subagentDepth: overrides.subagentDepth ?? 0,
     artifactsDir: path.resolve(
       overrides.artifactsDir ??

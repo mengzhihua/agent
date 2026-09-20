@@ -92,6 +92,13 @@ describe("one-click setup", () => {
     expect(forkBody).toMatchObject({ forkedFrom: "s1" });
     expect(forkBody.id).not.toBe("s1");
     expect(fs.existsSync(path.join(sessionDir, `${forkBody.id}.jsonl`))).toBe(true);
+    const cost = spawnSync(
+      process.execPath,
+      [path.join(root, "dist/cli.js"), "session", "cost", "s1", "--output-format", "json", "--session-dir", sessionDir],
+      { encoding: "utf8" },
+    );
+    expect(cost.status, cost.stderr).toBe(0);
+    expect(JSON.parse(cost.stdout)).toMatchObject({ id: "s1", inputTokens: 0, outputTokens: 0, calls: 0 });
     const deleted = spawnSync(
       process.execPath,
       [path.join(root, "dist/cli.js"), "session", "delete", "s1", "--output-format", "json", "--session-dir", sessionDir],
@@ -111,7 +118,7 @@ describe("one-click setup", () => {
     expect(help.stdout).toContain("--output-format");
     expect(help.stdout).toContain("--quiet");
     expect(help.stdout).toContain("agent session list");
-    expect(help.stdout).toContain("agent session list|show|delete|export|fork");
+    expect(help.stdout).toContain("agent session list|show|delete|export|fork|cost");
     expect(help.stdout).toContain("agent memory");
     expect(help.stdout).toContain("agent serve");
     expect(help.stdout).toContain("web console");

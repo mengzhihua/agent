@@ -30,7 +30,10 @@ describe("agent serve", () => {
     const store = new SessionStore(sessionDir);
     const host = await AgentHost.create(
       config,
-      new ScriptedProvider([{ text: "hello from serve" }, { text: "hello from serve" }]),
+      new ScriptedProvider([
+        { text: "hello from serve", usage: { inputTokens: 10, outputTokens: 2 } },
+        { text: "hello from serve" },
+      ]),
       store,
       autoApprover(),
       { connectMcp: false },
@@ -66,8 +69,13 @@ describe("agent serve", () => {
     });
     expect(prompted.status).toBe(200);
     const body = (await prompted.json()) as { type: string; text: string; sessionId: string };
-    expect(body).toMatchObject({ type: "result", text: "hello from serve" });
+    expect(body).toMatchObject({ type: "result", text: "hello from serve", usage: { inputTokens: 10, outputTokens: 2 } });
     expect(body.sessionId).toBeTruthy();
+    const usage = await fetch(`${server.url}/v1/sessions/${encodeURIComponent(body.sessionId)}/usage`, {
+      headers: { authorization: "Bearer secret" },
+    });
+    expect(usage.status).toBe(200);
+    expect(await usage.json()).toMatchObject({ id: body.sessionId, inputTokens: 10, outputTokens: 2, calls: 1 });
     const forked = await fetch(`${server.url}/v1/sessions/${encodeURIComponent(body.sessionId)}/fork`, {
       method: "POST",
       headers: { authorization: "Bearer secret" },

@@ -11,7 +11,7 @@
   </parent>
   <groupId>com.mengzhihua</groupId>
   <artifactId>agent-server</artifactId>
-  <version>0.31.0</version>
+  <version>0.32.0</version>
   <name>agent-server</name>
   <description>Spring Boot facade that runs the native agent CLI.</description>
   <properties>

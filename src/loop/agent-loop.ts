@@ -12,6 +12,7 @@ import { runTool, startLocationsForCall } from "../tools/types.js";
 import type { AgentConfig, Approver, LoopEvent, Provider, ToolCall, ToolDiff, ToolLocation } from "../types.js";
 import { assembleMessages } from "./assemble.js";
 import { shouldCompact, summarizeTranscript } from "./compact.js";
+import { capToolOutput } from "../usage.js";
 
 export interface RunTurnOptions {
   store: SessionStore;
@@ -70,6 +71,13 @@ export async function* runTurn(options: RunTurnOptions): AsyncGenerator<LoopEven
         } else if (event.type === "tool-call") {
           toolCalls.push({ id: event.id, name: event.name, arguments: event.arguments });
         } else if (event.type === "usage") {
+          store.append(sessionId, {
+            type: "usage",
+            id: newId("evt"),
+            timestamp: nowIso(),
+            inputTokens: event.inputTokens,
+            outputTokens: event.outputTokens,
+          });
           yield event;
         }
       }
@@ -133,7 +141,7 @@ export async function* runTurn(options: RunTurnOptions): AsyncGenerator<LoopEven
           yield { type: "permission", tool: call.name, decision: permission.decision, summary: permission.summary };
 
           if (permission.decision === "deny") {
-            yield* finishTool(store, sessionId, call, permission.summary, true);
+            yield* finishTool(store, sessionId, call, permission.summary, true, { outputLimit: config.toolOutputLimit });
             continue;
           }
 
@@ -141,7 +149,7 @@ export async function* runTurn(options: RunTurnOptions): AsyncGenerator<LoopEven
           if (pre.decision === "deny") {
             const content = `Hook blocked ${call.name}: ${pre.reason ?? "denied"}`;
             yield { type: "hook", hook: "PreToolUse", tool: call.name, message: content };
-            yield* finishTool(store, sessionId, call, content, true);
+            yield* finishTool(store, sessionId, call, content, true, { outputLimit: config.toolOutputLimit });
             continue;
           }
           runnable.push(call);
@@ -218,6 +226,7 @@ export async function* runTurn(options: RunTurnOptions): AsyncGenerator<LoopEven
           yield* finishTool(store, sessionId, call, content, result.isError, {
             locations: result.locations,
             diff: result.diff,
+            outputLimit: config.toolOutputLimit,
           });
         }
       }
@@ -263,22 +272,23 @@ async function* finishTool(
   call: ToolCall,
   content: string,
   isError?: boolean,
-  extra?: { locations?: ToolLocation[]; diff?: ToolDiff },
+  extra?: { locations?: ToolLocation[]; diff?: ToolDiff; outputLimit?: number },
 ): AsyncGenerator<LoopEvent> {
+  const capped = capToolOutput(content, extra?.outputLimit ?? 40_000);
   store.append(sessionId, {
     type: "tool_result",
     id: newId("evt"),
     timestamp: nowIso(),
     callId: call.id,
     name: call.name,
-    content,
+    content: capped,
     isError,
   });
   yield {
     type: "tool-end",
     callId: call.id,
     name: call.name,
-    content,
+    content: capped,
     isError,
     locations: extra?.locations,
     diff: extra?.diff,

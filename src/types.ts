@@ -30,6 +30,7 @@ export interface AgentConfig {
   sessionDir: string;
   shellTimeoutMs: number;
   shellOutputLimit: number;
+  toolOutputLimit: number;
   subagentDepth: number;
   artifactsDir: string;
   sandbox: SandboxMode;
@@ -151,6 +152,7 @@ export type SessionEvent =
       content: string;
       isError?: boolean;
     }
+  | { type: "usage"; id: string; timestamp: string; inputTokens: number; outputTokens: number }
   | { type: "compact"; id: string; timestamp: string; summary: string }
   | {
       type: "plan";

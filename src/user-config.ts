@@ -11,6 +11,7 @@ export interface UserFileConfig {
   sandbox?: SandboxMode;
   browser?: BrowserMode;
   compactTokens?: number;
+  toolOutputLimit?: number;
 }
 
 const PROVIDERS = new Set(["openai", "anthropic", "scripted"]);
@@ -57,6 +58,9 @@ export function parseUserConfig(raw: Record<string, unknown>): UserFileConfig {
   }
   if (typeof raw.compactTokens === "number" && Number.isFinite(raw.compactTokens) && raw.compactTokens > 0) {
     out.compactTokens = Math.trunc(raw.compactTokens);
+  }
+  if (typeof raw.toolOutputLimit === "number" && Number.isFinite(raw.toolOutputLimit) && raw.toolOutputLimit > 0) {
+    out.toolOutputLimit = Math.trunc(raw.toolOutputLimit);
   }
   return out;
 }

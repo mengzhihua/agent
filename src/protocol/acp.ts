@@ -8,6 +8,7 @@ import { formatMemoryShow, loadMemory } from "../context/memory.js";
 import type { AgentConfig, ApprovalMode, ApprovalRequest, LoopEvent, Risk, RunMode, SessionEvent, ToolDiff, ToolLocation } from "../types.js";
 import { locationsFromToolArgs } from "../tools/types.js";
 import { estimateTokens } from "../workspace.js";
+import { formatUsageLine, sessionUsage } from "../usage.js";
 import { encodeMessage, extractMessages, type Framing } from "./framing.js";
 import { elicitAskUser, parseElicitationCapabilities } from "./elicitation.js";
 import { createAcpFileIo, hasClientFs, parseClientCapabilities } from "./fs.js";
@@ -38,6 +39,7 @@ export const AVAILABLE_COMMANDS = [
   { name: "execute", description: "Switch to execute mode: edit files and run tools.", input: { hint: "task" } },
   { name: "skills", description: "List available skills for this workspace." },
   { name: "memory", description: "Show durable user and project memory." },
+  { name: "cost", description: "Show billed token usage for this session." },
   { name: "yes", description: "Auto-approve write, shell, and network tools." },
   { name: "ask", description: "Ask before write, shell, or network tools." },
 ] as const;
@@ -149,12 +151,26 @@ export function contextWindowSize(model: string, compactTokens: number): number 
   return Math.max(compactTokens, 128_000);
 }
 
-export function acpUsageUpdate(host: AgentHost, sessionId: string): { sessionUpdate: "usage_update"; used: number; size: number } {
+export function acpUsageUpdate(host: AgentHost, sessionId: string): {
+  sessionUpdate: "usage_update";
+  used: number;
+  size: number;
+  billed: { inputTokens: number; outputTokens: number; estimateUsd?: number };
+} {
   const size = contextWindowSize(host.config.model, host.config.compactTokens);
-  if (!host.store.exists(sessionId)) return { sessionUpdate: "usage_update", used: 0, size };
-  const messages = assembleMessages(host.store.read(sessionId));
+  if (!host.store.exists(sessionId)) {
+    return { sessionUpdate: "usage_update", used: 0, size, billed: { inputTokens: 0, outputTokens: 0 } };
+  }
+  const events = host.store.read(sessionId);
+  const messages = assembleMessages(events);
   const used = messages.length === 0 ? 0 : estimateTokens(messages);
-  return { sessionUpdate: "usage_update", used, size };
+  const billed = sessionUsage(events, host.config.model);
+  return {
+    sessionUpdate: "usage_update",
+    used,
+    size,
+    billed: { inputTokens: billed.inputTokens, outputTokens: billed.outputTokens, estimateUsd: billed.estimateUsd },
+  };
 }
 
 function notifyUsage(host: AgentHost, sessionId: string, notify: NotifyFn): void {
@@ -577,6 +593,17 @@ export function applySlashCommand(
           content: { type: "text", text: formatMemoryShow(loadMemory(host.config.workspace), "text") },
         },
       });
+      return "done";
+    }
+    case "cost": {
+      notify({
+        sessionId,
+        update: {
+          sessionUpdate: "agent_message_chunk",
+          content: { type: "text", text: formatUsageLine(sessionUsage(host.store.read(sessionId), host.config.model)) },
+        },
+      });
+      notifyUsage(host, sessionId, notify);
       return "done";
     }
     default:

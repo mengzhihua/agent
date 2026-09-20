@@ -34,6 +34,7 @@
     <input id="workspace" placeholder="workspace 路径（可选）" />
     <button class="ghost" id="new" type="button">新会话</button>
     <button class="ghost" id="fork" type="button">分叉</button>
+    <button class="ghost" id="cost" type="button">用量</button>
     <div id="sessions"></div>
     <button class="ghost" id="doctor" type="button">doctor</button>
   </aside>
@@ -97,7 +98,9 @@
             (shown.events || []).forEach((event) => {
               if (event.type === "user") line("you  " + event.text);
               if (event.type === "assistant") line(event.text);
+              if (event.type === "usage") line("tokens  " + event.inputTokens + " in / " + event.outputTokens + " out", "tool");
             });
+            if (shown.usage) line("tokens  " + shown.usage.inputTokens + " in / " + shown.usage.outputTokens + " out", "tool");
             refreshSessions();
           };
           $("sessions").appendChild(a);
@@ -117,6 +120,15 @@
         state.sessionId = body.id;
         line("forked  " + body.forkedFrom + " -> " + body.id, "tool");
         refreshSessions();
+      } catch (err) {
+        line("error  " + err.message, "err");
+      }
+    };
+    $("cost").onclick = async () => {
+      if (!state.sessionId) return;
+      try {
+        const body = await api("/v1/sessions/" + encodeURIComponent(state.sessionId) + "/usage", { headers: headers() });
+        line("tokens  " + body.inputTokens + " in / " + body.outputTokens + " out" + (body.estimateUsd != null ? "  (~$" + Number(body.estimateUsd).toFixed(4) + ")" : ""), "tool");
       } catch (err) {
         line("error  " + err.message, "err");
       }
@@ -162,7 +174,10 @@
           else if (event.type === "tool-start") line("→ " + event.name, "tool");
           else if (event.type === "tool-end") line((event.isError ? "✗ " : "✓ ") + event.name, "tool");
           else if (event.type === "error") line("error  " + event.message, "err");
-          else if (event.type === "result" && !acc.textContent) acc.textContent = event.text || "";
+          else if (event.type === "result") {
+            if (!acc.textContent) acc.textContent = event.text || "";
+            if (event.usage) line("tokens  " + event.usage.inputTokens + " in / " + event.usage.outputTokens + " out", "tool");
+          }
         }
       }
       $("log").scrollTop = $("log").scrollHeight;

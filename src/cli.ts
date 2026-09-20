@@ -20,6 +20,7 @@ import {
   encodeJsonResult,
   encodeStreamLine,
   formatEvalResults,
+  formatSessionCost,
   formatSessionDelete,
   formatSessionFork,
   formatSessionList,
@@ -27,6 +28,7 @@ import {
   parseOutputFormat,
   type OutputFormat,
 } from "./output.js";
+import { formatUsageLine, sessionUsage } from "./usage.js";
 import { runSelfUpdate, runUninstall } from "./self_update.js";
 import { SessionStore } from "./session/store.js";
 import type { Approver, BrowserMode, LoopEvent, ProviderName, SandboxMode } from "./types.js";
@@ -37,7 +39,7 @@ function usage(): string {
   return `Usage: agent [options] [prompt]
        agent acp
        agent eval <file-or-dir>
-       agent session list|show|delete|export|fork [id]
+       agent session list|show|delete|export|fork|cost [id]
        agent memory [show]
        agent doctor
        agent config
@@ -368,7 +370,13 @@ function runSessionCommand(argv: string[]): void {
     output.write(`${formatSessionFork(forked, machine)}\n`);
     return;
   }
-  throw new Error("usage: agent session list|show|delete|export|fork [id]");
+  if (action === "cost") {
+    if (!sessionId) throw new Error("usage: agent session cost <id>");
+    const shown = store.inspect(sessionId);
+    output.write(`${formatSessionCost({ id: shown.id, model: shown.model, ...shown.usage }, machine)}\n`);
+    return;
+  }
+  throw new Error("usage: agent session list|show|delete|export|fork|cost [id]");
 }
 
 function runMemoryCommand(argv: string[]): void {
@@ -422,7 +430,7 @@ async function interactive(host: AgentHost, sessionId: string): Promise<void> {
       if (!line) continue;
       if (line === "/quit" || line === "/exit") break;
       if (line === "/help") {
-        console.log("/quit  /yes  /ask  /plan  /execute  /skills  /session  /fork  /memory");
+        console.log("/quit  /yes  /ask  /plan  /execute  /skills  /session  /fork  /memory  /cost");
         continue;
       }
       if (line === "/session") {
@@ -437,6 +445,10 @@ async function interactive(host: AgentHost, sessionId: string): Promise<void> {
       }
       if (line === "/memory") {
         console.log(formatMemoryShow(loadMemory(host.config.workspace), "text"));
+        continue;
+      }
+      if (line === "/cost") {
+        console.log(formatUsageLine(sessionUsage(host.store.read(current), host.config.model)));
         continue;
       }
       if (line === "/skills") {
@@ -534,6 +546,9 @@ async function renderTurn(
   }
   if (format === "text" && printed) output.write("\n");
   const result = collectJsonResult(sessionId, events);
+  if (format === "text" && !quiet) {
+    stderr.write(`${formatUsageLine(sessionUsage(host.store.read(sessionId), host.config.model))}\n`);
+  }
   if (format === "json" || format === "stream-json") {
     output.write(`${encodeJsonResult(result)}\n`);
   }

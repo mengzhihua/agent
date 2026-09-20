@@ -1413,6 +1413,7 @@ describe("ACP slash commands", () => {
     expect(parseSlashCommand("/plan inspect auth")).toEqual({ name: "plan", rest: "inspect auth" });
     expect(parseSlashCommand("/skills")).toEqual({ name: "skills", rest: "" });
     expect(parseSlashCommand("/memory")).toEqual({ name: "memory", rest: "" });
+    expect(parseSlashCommand("/cost")).toEqual({ name: "cost", rest: "" });
     expect(parseSlashCommand("/unknown foo")).toEqual({ rest: "/unknown foo" });
     expect(parseSlashCommand("not a command")).toEqual({ rest: "not a command" });
   });
@@ -1432,6 +1433,7 @@ describe("ACP slash commands", () => {
     )) as { sessionId: string };
     expect(JSON.stringify(createdNotes)).toContain("available_commands_update");
     expect(JSON.stringify(createdNotes)).toContain('"name":"plan"');
+    expect(JSON.stringify(createdNotes)).toContain('"name":"cost"');
 
     const planNotes: unknown[] = [];
     const planned = await dispatch(
@@ -1466,6 +1468,22 @@ describe("ACP slash commands", () => {
     );
     expect(JSON.stringify(skillNotes)).toContain("(no skills)");
     expect(JSON.stringify(skillNotes)).not.toContain("from model");
+
+    const costNotes: unknown[] = [];
+    await dispatch(
+      host,
+      sessions,
+      controllers,
+      {
+        jsonrpc: "2.0",
+        id: 6,
+        method: "session/prompt",
+        params: { sessionId: created.sessionId, prompt: "/cost" },
+      },
+      (note) => costNotes.push(note),
+    );
+    expect(JSON.stringify(costNotes)).toContain("tokens");
+    expect(JSON.stringify(costNotes)).not.toContain("from model");
 
     const restNotes: unknown[] = [];
     await dispatch(
@@ -1664,7 +1682,7 @@ describe("ACP usage updates", () => {
   });
 
   it("notifies usage_update on session/new and after a prompt", async () => {
-    const host = await hostWith(new ScriptedProvider([{ text: "hello from acp" }]));
+    const host = await hostWith(new ScriptedProvider([{ text: "hello from acp", usage: { inputTokens: 8, outputTokens: 2 } }]));
     const sessions = new Set<string>();
     const controllers = new Map<string, AbortController>();
     const createdNotes: unknown[] = [];
@@ -1677,8 +1695,9 @@ describe("ACP usage updates", () => {
     )) as { sessionId: string };
     const createdUsage = createdNotes.find(
       (note) => (note as { update?: { sessionUpdate?: string } }).update?.sessionUpdate === "usage_update",
-    ) as { update: { used: number; size: number } };
+    ) as { update: { used: number; size: number; billed?: { inputTokens: number; outputTokens: number } } };
     expect(createdUsage.update.used).toBe(0);
+    expect(createdUsage.update.billed).toMatchObject({ inputTokens: 0, outputTokens: 0 });
     expect(createdUsage.update.size).toBe(contextWindowSize(host.config.model, host.config.compactTokens));
 
     const promptNotes: unknown[] = [];
@@ -1696,9 +1715,10 @@ describe("ACP usage updates", () => {
     );
     const promptUsage = promptNotes.find(
       (note) => (note as { update?: { sessionUpdate?: string } }).update?.sessionUpdate === "usage_update",
-    ) as { update: { used: number; size: number } };
+    ) as { update: { used: number; size: number; billed?: { inputTokens: number; outputTokens: number } } };
     expect(promptUsage.update.used).toBeGreaterThan(0);
     expect(promptUsage.update.size).toBe(createdUsage.update.size);
+    expect(promptUsage.update.billed).toMatchObject({ inputTokens: 8, outputTokens: 2 });
     expect(acpUsageUpdate(host, created.sessionId).used).toBe(promptUsage.update.used);
     await host.close();
   });

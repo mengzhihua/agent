@@ -3,6 +3,7 @@ import path from "node:path";
 import { redactSecrets } from "../credentials.js";
 import { newSessionId, nowIso } from "../ids.js";
 import type { SessionEvent } from "../types.js";
+import { sessionUsage, type SessionUsage } from "../usage.js";
 import { ensureDir } from "../workspace.js";
 
 export class SessionStore {
@@ -89,6 +90,7 @@ export class SessionStore {
       provider: meta.provider,
       title: firstUser && firstUser.type === "user" ? sessionTitle(firstUser.text) : undefined,
       forkedFrom: meta.forkedFrom,
+      usage: sessionUsage(events, meta.model),
       events,
     };
   }
@@ -139,6 +141,7 @@ export interface SessionInspect {
   provider: string;
   title?: string;
   forkedFrom?: string;
+  usage: SessionUsage;
   events: SessionEvent[];
 }
 

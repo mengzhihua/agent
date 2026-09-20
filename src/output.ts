@@ -2,6 +2,7 @@ import { redactSecrets } from "./credentials.js";
 import type { EvalResult } from "./eval/types.js";
 import type { SessionInspect, SessionListRow } from "./session/store.js";
 import type { LoopEvent, SessionEvent } from "./types.js";
+import { formatUsageLine, type SessionUsage } from "./usage.js";
 
 export type OutputFormat = "text" | "json" | "stream-json";
 
@@ -72,10 +73,19 @@ export function formatSessionList(rows: SessionListRow[], format: OutputFormat):
 
 export function formatSessionShow(session: SessionInspect, format: OutputFormat): string {
   if (format !== "text") return redactSecrets(JSON.stringify(session));
+  const cost = formatUsageLine(session.usage);
   const header = `session ${session.id}  ${session.timestamp}  ${session.model}  ${session.cwd}${
     session.title ? `  ${session.title}` : ""
-  }${session.forkedFrom ? `  fork of ${session.forkedFrom}` : ""}`;
+  }${session.forkedFrom ? `  fork of ${session.forkedFrom}` : ""}\n${cost}`;
   return `${header}\n\n${session.events.map(formatSessionEvent).join("\n\n")}`;
+}
+
+export function formatSessionCost(usage: SessionUsage & { id: string; model?: string }, format: OutputFormat): string {
+  if (format === "text") {
+    const model = usage.model ? `  ${usage.model}` : "";
+    return `session ${usage.id}${model}\n${formatUsageLine(usage)}`;
+  }
+  return JSON.stringify(usage);
 }
 
 export function formatSessionDelete(sessionId: string, format: OutputFormat): string {
@@ -138,6 +148,8 @@ function formatSessionEvent(event: SessionEvent): string {
       return `tool_call  ${event.name}  ${event.callId}\n${JSON.stringify(event.arguments)}`;
     case "tool_result":
       return `tool_result  ${event.name}  ${event.callId}${event.isError ? "  error" : ""}\n${event.content}`;
+    case "usage":
+      return `usage  ${event.timestamp}  ${event.inputTokens} in / ${event.outputTokens} out`;
     case "compact":
       return `compact  ${event.timestamp}\n${event.summary}`;
     case "plan":
