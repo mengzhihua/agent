@@ -50,5 +50,6 @@ export function configReport(): string {
     `sandbox ${config.sandbox}`,
     `browser ${config.browser}`,
     `workspace ${config.workspace}`,
+    `toolOutputLimit ${config.toolOutputLimit}`,
   ].join("\n");
 }

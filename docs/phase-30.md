@@ -12,7 +12,7 @@
 4. 版本 `0.31.0`
 5. Chrome 关掉后临时 profile 清理改成尽力而为：macOS 上 `Default/` 偶尔 `ENOTEMPTY`，不再拖垮 CI（否则 ARM 包发不出去）
 
-不做：Apple 公证 / Developer ID 证书（未公证仍可能要 `xattr -cr agent`）、OAuth、累计 cost、图片 prompt、Docker workspace / 云端 VM、Playwright、npm 公有源。
+不做：Apple 公证 / Developer ID 证书（未公证仍可能要 `xattr -cr agent`）、OAuth、图片 prompt、Docker workspace / 云端 VM、Playwright、npm 公有源。累计 token 用量见 [期 32](phase-32.md)。
 
 ## 怎么跑
 

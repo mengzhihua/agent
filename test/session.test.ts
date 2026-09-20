@@ -28,6 +28,7 @@ describe("session store", () => {
       title: "hello",
     });
     expect(store.inspect("s1").events).toHaveLength(2);
+    expect(store.inspect("s1").usage).toEqual({ inputTokens: 0, outputTokens: 0, calls: 0 });
     store.delete("s1");
     expect(store.exists("s1")).toBe(false);
     expect(store.list()).toEqual([]);

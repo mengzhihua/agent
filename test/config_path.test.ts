@@ -28,8 +28,9 @@ describe("user config", () => {
         sandbox: "none",
         browser: "html",
         provider: "nope",
+        toolOutputLimit: 12_000,
       }),
-    ).toEqual({ model: "grok-4", approvalMode: "auto", sandbox: "none", browser: "html" });
+    ).toEqual({ model: "grok-4", approvalMode: "auto", sandbox: "none", browser: "html", toolOutputLimit: 12_000 });
   });
 
   it("loadConfig reads AGENT_HOME/config.json under env and CLI", () => {
@@ -116,7 +117,7 @@ describe("completion and update", () => {
     expect(completionScript("bash")).toContain("session");
     expect(completionScript("bash")).toContain("memory");
     expect(completionScript("zsh")).toContain("#compdef agent");
-    expect(completionScript("zsh")).toContain("session:List, inspect, export, fork, or delete sessions");
+    expect(completionScript("zsh")).toContain("session:List, inspect, export, fork, cost, or delete sessions");
     expect(completionScript("powershell")).toContain("Register-ArgumentCompleter");
     expect(completionScript("powershell")).toContain("'session'");
     expect(completionScript("bash")).toContain("--file");

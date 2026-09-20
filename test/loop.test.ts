@@ -223,4 +223,25 @@ describe("agent loop", () => {
       expect(user.text).toContain("explain @note.ts");
     }
   });
+
+  it("persists billed usage and caps huge tool results", async () => {
+    const workspace = await fsp.mkdtemp(path.join(os.tmpdir(), "agent-usage-loop-"));
+    await fsp.writeFile(path.join(workspace, "big.txt"), `${"x".repeat(80)}\n`);
+    const store = new SessionStore(fs.mkdtempSync(path.join(os.tmpdir(), "agent-usage-loop-sess-")));
+    const provider = new ScriptedProvider([
+      {
+        toolCalls: [{ id: "c1", name: "read", arguments: { path: "big.txt" } }],
+        usage: { inputTokens: 12, outputTokens: 3 },
+      },
+      { text: "read it", usage: { inputTokens: 20, outputTokens: 4 } },
+    ]);
+    const { events } = await collect(store, "u1", "read the file", provider, workspace, { toolOutputLimit: 20 });
+    const toolEnd = events.find((event) => event.type === "tool-end" && event.name === "read");
+    expect(toolEnd?.type === "tool-end" && toolEnd.content).toMatch(/truncated/);
+    const stored = store.read("u1").find((event) => event.type === "tool_result");
+    expect(stored?.type === "tool_result" && stored.content).toMatch(/truncated/);
+    const billed = store.read("u1").filter((event) => event.type === "usage");
+    expect(billed).toHaveLength(2);
+    expect(store.inspect("u1").usage).toMatchObject({ inputTokens: 32, outputTokens: 7, calls: 2 });
+  });
 });

@@ -4,6 +4,7 @@ import {
   encodeJsonResult,
   encodeStreamLine,
   formatEvalResults,
+  formatSessionCost,
   formatSessionFork,
   formatSessionDelete,
   formatSessionList,
@@ -78,6 +79,7 @@ describe("output format", () => {
       model: "m",
       provider: "scripted",
       title: "hello",
+      usage: { inputTokens: 0, outputTokens: 0, calls: 0 },
       events: [
         {
           type: "session_meta" as const,
@@ -98,6 +100,12 @@ describe("output format", () => {
     expect(JSON.parse(formatSessionFork({ id: "s2", forkedFrom: "s1" }, "json"))).toEqual({
       id: "s2",
       forkedFrom: "s1",
+    });
+    expect(formatSessionCost({ id: "s1", inputTokens: 10, outputTokens: 4, calls: 1 }, "text")).toContain("10 in / 4 out");
+    expect(JSON.parse(formatSessionCost({ id: "s1", model: "gpt-4.1", inputTokens: 10, outputTokens: 4, calls: 1 }, "json"))).toMatchObject({
+      id: "s1",
+      inputTokens: 10,
+      outputTokens: 4,
     });
   });
 

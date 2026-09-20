@@ -5,12 +5,14 @@ export class ScriptedProvider implements Provider {
   private readonly queue: Array<{
     text?: string;
     toolCalls?: Array<{ id: string; name: string; arguments: unknown }>;
+    usage?: { inputTokens: number; outputTokens: number };
   }>;
 
   constructor(
     scripts: Array<{
       text?: string;
       toolCalls?: Array<{ id: string; name: string; arguments: unknown }>;
+      usage?: { inputTokens: number; outputTokens: number };
     }>,
   ) {
     this.queue = [...scripts];
@@ -31,6 +33,9 @@ export class ScriptedProvider implements Provider {
     }
     for (const call of next.toolCalls ?? []) {
       yield { type: "tool-call", id: call.id, name: call.name, arguments: call.arguments };
+    }
+    if (next.usage) {
+      yield { type: "usage", inputTokens: next.usage.inputTokens, outputTokens: next.usage.outputTokens };
     }
     yield { type: "done" };
   }

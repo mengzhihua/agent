@@ -14,7 +14,7 @@ export { loadIgnoreMatcher } from "./ignore.js";
 export { inspectGit } from "./git-context.js";
 export { applyLogin, authReport, redactSecrets, resolveSecret } from "./credentials.js";
 export { fetchWithRetry } from "./http.js";
-export { collectJsonResult, parseOutputFormat } from "./output.js";
+export { sessionUsage, formatUsageLine, capToolOutput, estimateUsd } from "./usage.js";
 export { ArtifactStore } from "./artifacts/store.js";
 export { BrowserSession } from "./browser/session.js";
 export { HtmlDriver } from "./browser/html.js";
