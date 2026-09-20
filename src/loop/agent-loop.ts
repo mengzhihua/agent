@@ -11,7 +11,7 @@ import type { ToolRegistry } from "../tools/registry.js";
 import { runTool, startLocationsForCall } from "../tools/types.js";
 import type { AgentConfig, Approver, LoopEvent, Provider, ToolCall, ToolDiff, ToolLocation } from "../types.js";
 import { assembleMessages } from "./assemble.js";
-import { shouldCompact, summarizeTranscript } from "./compact.js";
+import { compactNow } from "./compact.js";
 import { capToolOutput } from "../usage.js";
 
 export interface RunTurnOptions {
@@ -296,31 +296,11 @@ async function* finishTool(
 }
 
 async function* maybeCompact(options: RunTurnOptions): AsyncGenerator<LoopEvent> {
-  const { store, sessionId, provider, config, signal } = options;
-  const events = store.read(sessionId);
-  const last = events.at(-1);
-  const trailingUser = last?.type === "user" ? last : undefined;
-  const fullMessages = assembleMessages(events);
-  if (!shouldCompact(fullMessages, config)) return;
-
-  const prior = trailingUser ? assembleMessages(events.slice(0, -1)) : fullMessages;
-  if (prior.length === 0) return;
-
-  yield { type: "compact-start" };
-  const summary = await summarizeTranscript(provider, config, prior, signal);
-  store.append(sessionId, {
-    type: "compact",
-    id: newId("evt"),
-    timestamp: nowIso(),
-    summary,
+  yield* compactNow({
+    store: options.store,
+    sessionId: options.sessionId,
+    provider: options.provider,
+    config: options.config,
+    signal: options.signal,
   });
-  if (trailingUser) {
-    store.append(sessionId, {
-      type: "user",
-      id: newId("evt"),
-      timestamp: nowIso(),
-      text: trailingUser.text,
-    });
-  }
-  yield { type: "compact-end", summary };
 }

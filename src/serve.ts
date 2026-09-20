@@ -1,7 +1,7 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { AgentHost } from "./host.js";
 import { doctorReport } from "./doctor.js";
-import { collectJsonResult, encodeJsonResult, encodeStreamLine, formatSessionCost, formatSessionDelete, formatSessionFork, formatSessionList, formatSessionShow } from "./output.js";
+import { collectJsonResult, encodeJsonResult, encodeStreamLine, formatSessionCompact, formatSessionCost, formatSessionDelete, formatSessionFork, formatSessionList, formatSessionRewind, formatSessionShow } from "./output.js";
 import { loadConsoleHtml } from "./web/load.js";
 import { autoApprover } from "./permissions/policy.js";
 import { createProvider } from "./provider/factory.js";
@@ -135,7 +135,7 @@ async function handleRequest(
     sendJson(res, 200, {
       name: "agent",
       version: packageVersion(),
-      endpoints: ["/v1/health", "/v1/doctor", "/v1/prompt", "/v1/sessions", "/v1/sessions/{id}/fork", "/v1/sessions/{id}/usage", "/actuator/health", "/ui"],
+      endpoints: ["/v1/health", "/v1/doctor", "/v1/prompt", "/v1/sessions", "/v1/sessions/{id}/fork", "/v1/sessions/{id}/rewind", "/v1/sessions/{id}/compact", "/v1/sessions/{id}/usage", "/actuator/health", "/ui"],
     });
     return;
   }
@@ -203,6 +203,46 @@ async function handleRequest(
     }
     const shown = ctx.store.inspect(id);
     sendJson(res, 200, JSON.parse(formatSessionCost({ id: shown.id, model: shown.model, ...shown.usage }, "json")));
+    return;
+  }
+  const rewindMatch = /^\/v1\/sessions\/([^/]+)\/rewind$/.exec(url.pathname);
+  if (rewindMatch && method === "POST") {
+    const id = decodeURIComponent(rewindMatch[1]);
+    if (!ctx.store.exists(id)) {
+      sendJson(res, 404, { error: `session not found: ${id}` });
+      return;
+    }
+    const body = await readJson(req);
+    const untilEventId = typeof body.untilEventId === "string" ? body.untilEventId : undefined;
+    try {
+      const rewound = (await ctx.getHost()).rewindSession(id, { untilEventId });
+      sendJson(res, 200, JSON.parse(formatSessionRewind(rewound, "json")));
+    } catch (err) {
+      sendJson(res, 400, { error: redactSecrets(err instanceof Error ? err.message : String(err)) });
+    }
+    return;
+  }
+  const compactMatch = /^\/v1\/sessions\/([^/]+)\/compact$/.exec(url.pathname);
+  if (compactMatch && method === "POST") {
+    const id = decodeURIComponent(compactMatch[1]);
+    if (!ctx.store.exists(id)) {
+      sendJson(res, 404, { error: `session not found: ${id}` });
+      return;
+    }
+    const controller = new AbortController();
+    req.on("close", () => {
+      if (!res.writableEnded) controller.abort();
+    });
+    try {
+      let summary = "";
+      for await (const event of (await ctx.getHost()).compactSession(id, controller.signal)) {
+        if (event.type === "compact-end") summary = event.summary;
+        if (event.type === "error") throw new Error(event.message);
+      }
+      sendJson(res, 200, JSON.parse(formatSessionCompact({ id, summary }, "json")));
+    } catch (err) {
+      sendJson(res, 400, { error: redactSecrets(err instanceof Error ? err.message : String(err)) });
+    }
     return;
   }
   const forkMatch = /^\/v1\/sessions\/([^/]+)\/fork$/.exec(url.pathname);

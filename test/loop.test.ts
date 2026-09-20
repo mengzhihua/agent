@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { loadConfig } from "../src/config.js";
 import { runTurn } from "../src/loop/agent-loop.js";
+import { compactNow } from "../src/loop/compact.js";
 import { autoApprover, denyApprover } from "../src/permissions/policy.js";
 import { ScriptedProvider } from "../src/provider/scripted.js";
 import { SessionStore } from "../src/session/store.js";
@@ -243,5 +244,27 @@ describe("agent loop", () => {
     const billed = store.read("u1").filter((event) => event.type === "usage");
     expect(billed).toHaveLength(2);
     expect(store.inspect("u1").usage).toMatchObject({ inputTokens: 32, outputTokens: 7, calls: 2 });
+  });
+
+  it("force-compacts a transcript into a summary event", async () => {
+    const workspace = await fsp.mkdtemp(path.join(os.tmpdir(), "agent-compact-"));
+    const store = new SessionStore(fs.mkdtempSync(path.join(os.tmpdir(), "agent-compact-sess-")));
+    const provider = new ScriptedProvider([{ text: "hello" }, { text: "user said hello" }]);
+    await collect(store, "c1", "hello", provider, workspace);
+    const config = loadConfig({ workspace, provider: "scripted" });
+    const events = [];
+    for await (const event of compactNow({
+      store,
+      sessionId: "c1",
+      provider,
+      config,
+      signal: new AbortController().signal,
+      force: true,
+    })) {
+      events.push(event);
+    }
+    expect(events.some((event) => event.type === "compact-start")).toBe(true);
+    expect(events.some((event) => event.type === "compact-end" && event.summary === "user said hello")).toBe(true);
+    expect(store.read("c1").some((event) => event.type === "compact" && event.summary === "user said hello")).toBe(true);
   });
 });

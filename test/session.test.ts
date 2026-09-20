@@ -63,6 +63,47 @@ describe("session store", () => {
     expect(store.inspect(forked.id).forkedFrom).toBe("s1");
     expect(() => store.fork("missing")).toThrow(/session not found/);
   });
+
+  it("rewinds the last user turn and finds the latest session for a cwd", () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "agent-rewind-"));
+    const other = fs.mkdtempSync(path.join(os.tmpdir(), "agent-rewind-other-"));
+    const store = new SessionStore(dir);
+    store.create({
+      type: "session_meta",
+      id: "s1",
+      timestamp: "2026-09-20T00:00:00.000Z",
+      cwd: dir,
+      model: "test",
+      provider: "scripted",
+    });
+    store.append("s1", { type: "user", id: "u1", timestamp: "2026-09-20T00:00:01.000Z", text: "hello" });
+    store.append("s1", { type: "assistant", id: "a1", timestamp: "2026-09-20T00:00:02.000Z", text: "hi" });
+    store.append("s1", { type: "user", id: "u2", timestamp: "2026-09-20T00:00:03.000Z", text: "later" });
+    store.append("s1", { type: "assistant", id: "a2", timestamp: "2026-09-20T00:00:04.000Z", text: "ok" });
+    const dropped = store.rewind("s1");
+    expect(dropped).toMatchObject({ id: "s1", removed: 2 });
+    expect(store.read("s1").map((event) => event.type)).toEqual(["session_meta", "user", "assistant"]);
+    const until = store.rewind("s1", { untilEventId: "u1" });
+    expect(until.removed).toBe(1);
+    expect(store.read("s1").map((event) => ("id" in event ? event.id : "")).filter(Boolean)).toEqual(["s1", "u1"]);
+    expect(store.rewind("s1")).toMatchObject({ id: "s1", removed: 1 });
+    expect(store.read("s1").map((event) => event.type)).toEqual(["session_meta"]);
+    expect(() => store.rewind("s1")).toThrow(/nothing to rewind/);
+    store.create({
+      type: "session_meta",
+      id: "s2",
+      timestamp: "2026-09-20T00:00:05.000Z",
+      cwd: other,
+      model: "test",
+      provider: "scripted",
+    });
+    store.append("s2", { type: "user", id: "u3", timestamp: "2026-09-20T00:00:06.000Z", text: "elsewhere" });
+    expect(store.latest({ cwd: dir })?.id).toBe("s1");
+    expect(store.latest({ cwd: other })?.id).toBe("s2");
+    expect(store.latest()?.id).toBe("s2");
+    expect(store.latest({ cwd: "/no/such" })).toBeUndefined();
+    expect(() => store.rewind("missing")).toThrow(/session not found/);
+  });
 });
 
 describe("assembleMessages", () => {

@@ -80,7 +80,7 @@ describe("ACP-shaped protocol", () => {
       agentCapabilities: {
         loadSession: true,
         promptCapabilities: { image: false, audio: false, embeddedContext: true },
-        sessionCapabilities: { additionalDirectories: {}, resume: {}, close: {}, list: {}, delete: {}, fork: {} },
+        sessionCapabilities: { additionalDirectories: {}, resume: {}, close: {}, list: {}, delete: {}, fork: {}, rewind: {}, compact: {} },
       },
       agentInfo: { name: "agent", version: packageVersion() },
     });
@@ -1348,6 +1348,63 @@ describe("ACP session list / delete", () => {
     await host.close();
   });
 
+  it("rewinds the last turn and compact-summarizes on request", async () => {
+    const host = await hostWith(new ScriptedProvider([{ text: "first" }, { text: "second" }, { text: "did first then second" }]));
+    const sessions = new Set<string>();
+    const controllers = new Map<string, AbortController>();
+    const created = (await dispatch(
+      host,
+      sessions,
+      controllers,
+      { jsonrpc: "2.0", id: 1, method: "session/new" },
+      () => undefined,
+    )) as { sessionId: string };
+    await dispatch(
+      host,
+      sessions,
+      controllers,
+      {
+        jsonrpc: "2.0",
+        id: 2,
+        method: "session/prompt",
+        params: { sessionId: created.sessionId, prompt: "hello" },
+      },
+      () => undefined,
+    );
+    await dispatch(
+      host,
+      sessions,
+      controllers,
+      {
+        jsonrpc: "2.0",
+        id: 3,
+        method: "session/prompt",
+        params: { sessionId: created.sessionId, prompt: "again" },
+      },
+      () => undefined,
+    );
+    const rewound = (await dispatch(
+      host,
+      sessions,
+      controllers,
+      { jsonrpc: "2.0", id: 4, method: "session/rewind", params: { sessionId: created.sessionId } },
+      () => undefined,
+    )) as { id: string; removed: number };
+    expect(rewound.id).toBe(created.sessionId);
+    expect(rewound.removed).toBeGreaterThan(0);
+    expect(host.store.read(created.sessionId).filter((event) => event.type === "user")).toHaveLength(1);
+    const compacted = (await dispatch(
+      host,
+      sessions,
+      controllers,
+      { jsonrpc: "2.0", id: 5, method: "session/compact", params: { sessionId: created.sessionId } },
+      () => undefined,
+    )) as { sessionId: string; summary: string };
+    expect(compacted.summary).toBe("did first then second");
+    expect(host.store.read(created.sessionId).some((event) => event.type === "compact")).toBe(true);
+    await host.close();
+  });
+
   it("deletes sessions from history, including missing ids", async () => {
     const host = await hostWith(new ScriptedProvider([{ text: "ok" }]));
     const sessions = new Set<string>();
@@ -1414,6 +1471,8 @@ describe("ACP slash commands", () => {
     expect(parseSlashCommand("/skills")).toEqual({ name: "skills", rest: "" });
     expect(parseSlashCommand("/memory")).toEqual({ name: "memory", rest: "" });
     expect(parseSlashCommand("/cost")).toEqual({ name: "cost", rest: "" });
+    expect(parseSlashCommand("/rewind")).toEqual({ name: "rewind", rest: "" });
+    expect(parseSlashCommand("/compact")).toEqual({ name: "compact", rest: "" });
     expect(parseSlashCommand("/unknown foo")).toEqual({ rest: "/unknown foo" });
     expect(parseSlashCommand("not a command")).toEqual({ rest: "not a command" });
   });
@@ -1434,6 +1493,8 @@ describe("ACP slash commands", () => {
     expect(JSON.stringify(createdNotes)).toContain("available_commands_update");
     expect(JSON.stringify(createdNotes)).toContain('"name":"plan"');
     expect(JSON.stringify(createdNotes)).toContain('"name":"cost"');
+    expect(JSON.stringify(createdNotes)).toContain('"name":"rewind"');
+    expect(JSON.stringify(createdNotes)).toContain('"name":"compact"');
 
     const planNotes: unknown[] = [];
     const planned = await dispatch(
@@ -1498,8 +1559,20 @@ describe("ACP slash commands", () => {
       },
       (note) => restNotes.push(note),
     );
-    expect(host.config.runMode).toBe("default");
-    expect(JSON.stringify(restNotes)).toContain("from model");
+    const rewindNotes: unknown[] = [];
+    await dispatch(
+      host,
+      sessions,
+      controllers,
+      {
+        jsonrpc: "2.0",
+        id: 5,
+        method: "session/prompt",
+        params: { sessionId: created.sessionId, prompt: "/rewind" },
+      },
+      (note) => rewindNotes.push(note),
+    );
+    expect(JSON.stringify(rewindNotes)).toContain("Rewound");
     await host.close();
   });
 

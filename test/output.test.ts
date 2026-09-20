@@ -4,10 +4,12 @@ import {
   encodeJsonResult,
   encodeStreamLine,
   formatEvalResults,
+  formatSessionCompact,
   formatSessionCost,
   formatSessionFork,
   formatSessionDelete,
   formatSessionList,
+  formatSessionRewind,
   formatSessionShow,
   parseOutputFormat,
 } from "../src/output.js";
@@ -106,6 +108,17 @@ describe("output format", () => {
       id: "s1",
       inputTokens: 10,
       outputTokens: 4,
+    });
+    expect(formatSessionRewind({ id: "s1", removed: 2 }, "text")).toBe("Rewound s1 (2 events removed)");
+    expect(JSON.parse(formatSessionRewind({ id: "s1", removed: 2, untilEventId: "a1" }, "json"))).toEqual({
+      id: "s1",
+      removed: 2,
+      untilEventId: "a1",
+    });
+    expect(formatSessionCompact({ id: "s1", summary: "did x" }, "text")).toBe("Compacted s1\ndid x");
+    expect(JSON.parse(formatSessionCompact({ id: "s1", summary: "did x" }, "json"))).toEqual({
+      id: "s1",
+      summary: "did x",
     });
   });
 

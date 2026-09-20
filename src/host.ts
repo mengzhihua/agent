@@ -6,6 +6,7 @@ import { loadSkills, type SkillIndex } from "./context/skills.js";
 import { HookRunner } from "./hooks/hooks.js";
 import { newSessionId, nowIso } from "./ids.js";
 import { runTurn } from "./loop/agent-loop.js";
+import { compactNow } from "./loop/compact.js";
 import { McpManager } from "./mcp/manager.js";
 import { autoApprover } from "./permissions/policy.js";
 import type { ClientElicitationCaps } from "./protocol/elicitation.js";
@@ -137,6 +138,28 @@ export class AgentHost {
     this.runtimeFor(forked.id);
     if (extraRoots.length) this.setSessionRoots(forked.id, extraRoots);
     return forked.id;
+  }
+
+  rewindSession(sessionId: string, opts: { untilEventId?: string } = {}): { id: string; removed: number; untilEventId?: string } {
+    if (!this.store.exists(sessionId)) {
+      throw new Error(`session not found: ${sessionId}`);
+    }
+    return this.store.rewind(sessionId, opts);
+  }
+
+  async *compactSession(sessionId: string, signal: AbortSignal): AsyncGenerator<LoopEvent> {
+    if (!this.store.exists(sessionId)) {
+      throw new Error(`session not found: ${sessionId}`);
+    }
+    this.runtimeFor(sessionId);
+    yield* compactNow({
+      store: this.store,
+      sessionId,
+      provider: this.provider,
+      config: this.config,
+      signal,
+      force: true,
+    });
   }
 
   resume(sessionId: string, cwd?: string): void {

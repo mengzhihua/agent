@@ -20,10 +20,12 @@ import {
   encodeJsonResult,
   encodeStreamLine,
   formatEvalResults,
+  formatSessionCompact,
   formatSessionCost,
   formatSessionDelete,
   formatSessionFork,
   formatSessionList,
+  formatSessionRewind,
   formatSessionShow,
   parseOutputFormat,
   type OutputFormat,
@@ -39,7 +41,7 @@ function usage(): string {
   return `Usage: agent [options] [prompt]
        agent acp
        agent eval <file-or-dir>
-       agent session list|show|delete|export|fork|cost [id]
+       agent session list|show|delete|export|fork|rewind|compact|cost [id]
        agent memory [show]
        agent doctor
        agent config
@@ -58,6 +60,7 @@ function usage(): string {
   -y, --yes              Auto-approve write/shell/network tools
   --plan                 Start in plan mode (read-only + update_plan)
   -w, --workspace <dir>  Workspace root (default: cwd)
+  -c, --continue         Resume the latest session in this workspace
   --resume <id>          Continue a session
   --list                 List sessions (alias: agent session list)
   --file <path>          Attach a workspace file to the prompt (repeatable)
@@ -161,7 +164,7 @@ async function main(): Promise<void> {
   }
 
   if (process.argv[2] === "session") {
-    runSessionCommand(process.argv.slice(3));
+    await runSessionCommand(process.argv.slice(3));
     return;
   }
 
@@ -179,6 +182,7 @@ async function main(): Promise<void> {
       yes: { type: "boolean", short: "y", default: false },
       plan: { type: "boolean", default: false },
       workspace: { type: "string", short: "w" },
+      continue: { type: "boolean", short: "c", default: false },
       resume: { type: "string" },
       list: { type: "boolean", default: false },
       file: { type: "string", multiple: true },
@@ -227,14 +231,27 @@ async function main(): Promise<void> {
   if (format !== "text" && !print) {
     throw new Error("--output-format json|stream-json requires a prompt or --print");
   }
+  if (values.continue && values.resume) {
+    throw new Error("use --continue or --resume, not both");
+  }
   const approver = values.yes || config.approvalMode === "auto" ? autoApprover() : makeStdinApprover();
   const host = await AgentHost.create(config, createProvider(config), store, approver, {
     connectMcp: !values["no-mcp"],
   });
 
   try {
-    const sessionId = values.resume ? values.resume : host.createSession();
-    if (values.resume) host.resume(sessionId);
+    let sessionId: string;
+    if (values.resume) {
+      sessionId = values.resume;
+      host.resume(sessionId);
+    } else if (values.continue) {
+      const latest = store.latest({ cwd: config.workspace });
+      if (!latest) throw new Error(`no previous session in ${config.workspace}`);
+      sessionId = latest.id;
+      host.resume(sessionId);
+    } else {
+      sessionId = host.createSession();
+    }
     if (!quiet && format === "text") {
       stderr.write(`session ${sessionId}  mode ${host.config.runMode}\n`);
     }
@@ -331,7 +348,7 @@ async function runEvalCommand(argv: string[]): Promise<void> {
   if (results.some((result) => !result.ok)) process.exitCode = 1;
 }
 
-function runSessionCommand(argv: string[]): void {
+async function runSessionCommand(argv: string[]): Promise<void> {
   const { values, positionals } = parseArgs({
     args: argv,
     allowPositionals: true,
@@ -339,11 +356,14 @@ function runSessionCommand(argv: string[]): void {
       "output-format": { type: "string" },
       "session-dir": { type: "string" },
       until: { type: "string" },
+      workspace: { type: "string", short: "w" },
+      yes: { type: "boolean", short: "y", default: false },
+      "no-mcp": { type: "boolean", default: false },
     },
   });
   const action = positionals[0] ?? "list";
   const sessionId = positionals[1];
-  const config = loadConfig({ sessionDir: values["session-dir"] });
+  const config = loadConfig({ sessionDir: values["session-dir"], workspace: values.workspace });
   const store = new SessionStore(config.sessionDir);
   const format = parseOutputFormat(values["output-format"]);
   const machine = format === "text" ? "text" : "json";
@@ -370,13 +390,41 @@ function runSessionCommand(argv: string[]): void {
     output.write(`${formatSessionFork(forked, machine)}\n`);
     return;
   }
+  if (action === "rewind") {
+    if (!sessionId) throw new Error("usage: agent session rewind <id> [--until <event-id>]");
+    const rewound = store.rewind(sessionId, { untilEventId: values.until });
+    output.write(`${formatSessionRewind(rewound, machine)}\n`);
+    return;
+  }
+  if (action === "compact") {
+    if (!sessionId) throw new Error("usage: agent session compact <id>");
+    const approver = values.yes || config.approvalMode === "auto" ? autoApprover() : makeStdinApprover();
+    const host = await AgentHost.create(config, createProvider(config), store, approver, {
+      connectMcp: !values["no-mcp"],
+    });
+    try {
+      host.resume(sessionId);
+      const controller = new AbortController();
+      process.on("SIGINT", () => controller.abort());
+      let summary = "";
+      for await (const event of host.compactSession(sessionId, controller.signal)) {
+        if (event.type === "compact-start" && format === "text") stderr.write("(compacting context)\n");
+        if (event.type === "compact-end") summary = event.summary;
+        if (event.type === "error") throw new Error(event.message);
+      }
+      output.write(`${formatSessionCompact({ id: sessionId, summary }, machine)}\n`);
+    } finally {
+      await host.close();
+    }
+    return;
+  }
   if (action === "cost") {
     if (!sessionId) throw new Error("usage: agent session cost <id>");
     const shown = store.inspect(sessionId);
     output.write(`${formatSessionCost({ id: shown.id, model: shown.model, ...shown.usage }, machine)}\n`);
     return;
   }
-  throw new Error("usage: agent session list|show|delete|export|fork|cost [id]");
+  throw new Error("usage: agent session list|show|delete|export|fork|rewind|compact|cost [id]");
 }
 
 function runMemoryCommand(argv: string[]): void {
@@ -430,7 +478,7 @@ async function interactive(host: AgentHost, sessionId: string): Promise<void> {
       if (!line) continue;
       if (line === "/quit" || line === "/exit") break;
       if (line === "/help") {
-        console.log("/quit  /yes  /ask  /plan  /execute  /skills  /session  /fork  /memory  /cost");
+        console.log("/quit  /yes  /ask  /plan  /execute  /skills  /session  /fork  /rewind  /compact  /memory  /cost");
         continue;
       }
       if (line === "/session") {
@@ -441,6 +489,23 @@ async function interactive(host: AgentHost, sessionId: string): Promise<void> {
         const next = host.forkSession(current);
         console.log(`Forked ${current} -> ${next}`);
         current = next;
+        continue;
+      }
+      if (line === "/rewind") {
+        const rewound = host.rewindSession(current);
+        console.log(`Rewound ${rewound.removed} events`);
+        continue;
+      }
+      if (line === "/compact") {
+        running = new AbortController();
+        let summary = "";
+        for await (const event of host.compactSession(current, running.signal)) {
+          if (event.type === "compact-start") console.log("(compacting context)");
+          if (event.type === "compact-end") summary = event.summary;
+          if (event.type === "error") console.log(`error: ${event.message}`);
+        }
+        running = null;
+        if (summary) console.log(summary);
         continue;
       }
       if (line === "/memory") {

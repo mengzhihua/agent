@@ -99,6 +99,19 @@ describe("one-click setup", () => {
     );
     expect(cost.status, cost.stderr).toBe(0);
     expect(JSON.parse(cost.stdout)).toMatchObject({ id: "s1", inputTokens: 0, outputTokens: 0, calls: 0 });
+    const rewound = spawnSync(
+      process.execPath,
+      [path.join(root, "dist/cli.js"), "session", "rewind", "s1", "--output-format", "json", "--session-dir", sessionDir],
+      { encoding: "utf8" },
+    );
+    expect(rewound.status, rewound.stderr).toBe(0);
+    expect(JSON.parse(rewound.stdout)).toMatchObject({ id: "s1", removed: 1 });
+    const afterRewind = spawnSync(
+      process.execPath,
+      [path.join(root, "dist/cli.js"), "session", "show", "s1", "--output-format", "json", "--session-dir", sessionDir],
+      { encoding: "utf8" },
+    );
+    expect(JSON.parse(afterRewind.stdout).events.map((event: { type: string }) => event.type)).toEqual(["session_meta"]);
     const deleted = spawnSync(
       process.execPath,
       [path.join(root, "dist/cli.js"), "session", "delete", "s1", "--output-format", "json", "--session-dir", sessionDir],
@@ -118,7 +131,8 @@ describe("one-click setup", () => {
     expect(help.stdout).toContain("--output-format");
     expect(help.stdout).toContain("--quiet");
     expect(help.stdout).toContain("agent session list");
-    expect(help.stdout).toContain("agent session list|show|delete|export|fork|cost");
+    expect(help.stdout).toContain("agent session list|show|delete|export|fork|rewind|compact|cost");
+    expect(help.stdout).toContain("--continue");
     expect(help.stdout).toContain("agent memory");
     expect(help.stdout).toContain("agent serve");
     expect(help.stdout).toContain("web console");

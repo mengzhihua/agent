@@ -39,6 +39,8 @@ export const AVAILABLE_COMMANDS = [
   { name: "execute", description: "Switch to execute mode: edit files and run tools.", input: { hint: "task" } },
   { name: "skills", description: "List available skills for this workspace." },
   { name: "memory", description: "Show durable user and project memory." },
+  { name: "rewind", description: "Drop the last user turn from this session." },
+  { name: "compact", description: "Summarize the transcript to free context window." },
   { name: "cost", description: "Show billed token usage for this session." },
   { name: "yes", description: "Auto-approve write, shell, and network tools." },
   { name: "ask", description: "Ask before write, shell, or network tools." },
@@ -357,7 +359,7 @@ export async function dispatch(
           loadSession: true,
           promptCapabilities: { image: false, audio: false, embeddedContext: true },
           mcpCapabilities: { http: true, sse: false },
-          sessionCapabilities: { additionalDirectories: {}, resume: {}, close: {}, list: {}, delete: {}, fork: {} },
+          sessionCapabilities: { additionalDirectories: {}, resume: {}, close: {}, list: {}, delete: {}, fork: {}, rewind: {}, compact: {} },
         },
         agentInfo: { name: "agent", version: packageVersion() },
         authMethods: [],
@@ -423,6 +425,31 @@ export async function dispatch(
       notifyUsage(host, sessionId, notify);
       return { sessionId, forkedFrom: sourceId, modes: modeState(host.config.runMode), configOptions: acpConfigOptions(host) };
     }
+    case "session/rewind": {
+      const sessionId = String(req.params?.sessionId ?? "");
+      if (!sessions.has(sessionId)) throw new Error("unknown session");
+      const untilEventId = typeof req.params?.untilEventId === "string" ? req.params.untilEventId : undefined;
+      const rewound = host.rewindSession(sessionId, { untilEventId });
+      notifyUsage(host, sessionId, notify);
+      return rewound;
+    }
+    case "session/compact": {
+      const sessionId = String(req.params?.sessionId ?? "");
+      if (!sessions.has(sessionId)) throw new Error("unknown session");
+      const controller = new AbortController();
+      controllers.set(sessionId, controller);
+      try {
+        let summary = "";
+        for await (const event of host.compactSession(sessionId, controller.signal)) {
+          notify({ sessionId, update: toAcpUpdate(event) });
+          if (event.type === "compact-end") summary = event.summary;
+        }
+        notifyUsage(host, sessionId, notify);
+        return { sessionId, summary };
+      } finally {
+        controllers.delete(sessionId);
+      }
+    }
     case "session/set_mode": {
       const sessionId = String(req.params?.sessionId ?? "");
       if (!sessions.has(sessionId)) throw new Error("unknown session");
@@ -455,6 +482,19 @@ export async function dispatch(
       const parsed = parseAcpPrompt(req.params?.prompt);
       const rawPrompt = parsed.text;
       const slash = parseSlashCommand(rawPrompt);
+      if (slash.name === "compact") {
+        const controller = new AbortController();
+        controllers.set(sessionId, controller);
+        try {
+          for await (const event of host.compactSession(sessionId, controller.signal)) {
+            notify({ sessionId, update: toAcpUpdate(event) });
+          }
+          notifyUsage(host, sessionId, notify);
+          return { stopReason: controller.signal.aborted ? "cancelled" : "end_turn" };
+        } finally {
+          controllers.delete(sessionId);
+        }
+      }
       if (slash.name && applySlashCommand(host, sessionId, slash, notify) === "done") {
         notifyUsage(host, sessionId, notify);
         return { stopReason: "end_turn" };
@@ -601,6 +641,22 @@ export function applySlashCommand(
         update: {
           sessionUpdate: "agent_message_chunk",
           content: { type: "text", text: formatUsageLine(sessionUsage(host.store.read(sessionId), host.config.model)) },
+        },
+      });
+      notifyUsage(host, sessionId, notify);
+      return "done";
+    }
+    case "rewind": {
+      const untilEventId = slash.rest || undefined;
+      const rewound = host.rewindSession(sessionId, { untilEventId });
+      notify({
+        sessionId,
+        update: {
+          sessionUpdate: "agent_message_chunk",
+          content: {
+            type: "text",
+            text: `Rewound ${rewound.removed} events${rewound.untilEventId ? ` until ${rewound.untilEventId}` : ""}`,
+          },
         },
       });
       notifyUsage(host, sessionId, notify);

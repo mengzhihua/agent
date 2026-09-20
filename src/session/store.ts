@@ -48,6 +48,45 @@ export class SessionStore {
     if (fs.existsSync(file)) fs.unlinkSync(file);
   }
 
+  latest(opts: { cwd?: string } = {}): SessionListRow | undefined {
+    const cwd = opts.cwd ? path.resolve(opts.cwd) : undefined;
+    return this.list().find((row) => !cwd || path.resolve(row.cwd) === cwd);
+  }
+
+  replace(sessionId: string, events: SessionEvent[]): void {
+    if (!this.exists(sessionId)) throw new Error(`session not found: ${sessionId}`);
+    const file = this.pathFor(sessionId);
+    const tmp = `${file}.tmp`;
+    const body = events.map((event) => redactSecrets(JSON.stringify(event))).join("\n");
+    fs.writeFileSync(tmp, body ? `${body}\n` : "", "utf8");
+    fs.renameSync(tmp, file);
+  }
+
+  rewind(sessionId: string, opts: { untilEventId?: string } = {}): SessionRewindResult {
+    const events = this.read(sessionId);
+    let keep: SessionEvent[];
+    if (opts.untilEventId) {
+      const idx = events.findIndex((event) => "id" in event && event.id === opts.untilEventId);
+      if (idx === -1) throw new Error(`event not found: ${opts.untilEventId}`);
+      keep = events.slice(0, idx + 1);
+    } else {
+      let lastUser = -1;
+      for (let i = events.length - 1; i >= 0; i--) {
+        if (events[i]?.type === "user") {
+          lastUser = i;
+          break;
+        }
+      }
+      if (lastUser < 0) throw new Error("nothing to rewind");
+      keep = events.slice(0, lastUser);
+    }
+    if (keep.length === 0 || keep[0]?.type !== "session_meta") {
+      throw new Error("rewind would drop session metadata");
+    }
+    this.replace(sessionId, keep);
+    return { id: sessionId, removed: events.length - keep.length, untilEventId: opts.untilEventId };
+  }
+
   fork(sourceId: string, opts: { untilEventId?: string } = {}): { id: string; forkedFrom: string } {
     const events = this.read(sourceId);
     let copied = events;
@@ -122,6 +161,12 @@ export class SessionStore {
     }
     return rows.sort((a, b) => b.timestamp.localeCompare(a.timestamp));
   }
+}
+
+export interface SessionRewindResult {
+  id: string;
+  removed: number;
+  untilEventId?: string;
 }
 
 export interface SessionListRow {

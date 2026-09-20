@@ -117,6 +117,26 @@ public class AgentApiController {
     }
   }
 
+  @PostMapping("/v1/sessions/{id}/rewind")
+  public JsonNode rewind(@PathVariable("id") String id) throws Exception {
+    try {
+      String raw = cli.run(List.of("session", "rewind", id, "--output-format", "json"), 30);
+      return mapper.readTree(lastJsonLine(raw));
+    } catch (Exception ex) {
+      throw new ResponseStatusException(HttpStatus.NOT_FOUND, ex.getMessage());
+    }
+  }
+
+  @PostMapping("/v1/sessions/{id}/compact")
+  public JsonNode compact(@PathVariable("id") String id) throws Exception {
+    try {
+      String raw = cli.run(List.of("session", "compact", id, "--output-format", "json", "-y", "--no-mcp"), 600);
+      return mapper.readTree(lastJsonLine(raw));
+    } catch (Exception ex) {
+      throw new ResponseStatusException(HttpStatus.BAD_REQUEST, ex.getMessage());
+    }
+  }
+
   @PostMapping("/v1/sessions")
   public ResponseEntity<ObjectNode> create() throws Exception {
     ObjectNode node = mapper.createObjectNode();
