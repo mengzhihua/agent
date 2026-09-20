@@ -2,7 +2,7 @@
 
 通用 agent 软件：一个极简的模型–工具循环，外面套 harness。
 
-当前进度：**期 25 — GitHub Release 成品包**。
+当前进度：**期 26 — 原生二进制与 Spring Boot 服务端**。
 
 - [行业研究](docs/industry-agent-research.md) — Codex、Claude Code、Grok Build、Devin、Cursor、Gemini CLI、Manus、OpenHands 等怎么做，以及通用 harness 的收敛形态
 - [期 0](docs/phase-0.md)
@@ -31,6 +31,7 @@
 - [期 23](docs/phase-23.md)
 - [期 24](docs/phase-24.md)
 - [期 25](docs/phase-25.md)
+- [期 26](docs/phase-26.md)
 
 ## 研究结论（极简）
 
@@ -44,7 +45,7 @@
 
 ## 安装（macOS / Linux / Windows）
 
-需要本机 [Node.js 22+](https://nodejs.org/)（不需要 Docker、npm 或 TypeScript）。安装脚本默认拉 **GitHub Release** 里编好的 `agent.tgz`。
+安装脚本默认拉 **GitHub Release 里的原生包**（Windows `.exe`，macOS / Linux `.tar.gz`），**不需要本机 Node.js、npm 或 TypeScript**。失败时才退回 `agent.tgz`（需要 Node 22）。
 
 macOS / Linux：
 
@@ -58,11 +59,33 @@ Windows PowerShell：
 irm https://raw.githubusercontent.com/mengzhihua/agent/main/scripts/install.ps1 | iex
 ```
 
-装好后执行 `agent doctor`。新开一个终端即可直接运行 `agent`（安装脚本会改用户 PATH）。之后可用 `agent update`（同样跟最新 Release）/ `agent uninstall`。
+也可以直接从 https://github.com/mengzhihua/agent/releases 下载对应文件：
 
-指定版本：`AGENT_REF=v0.26.0`。要从源码装 main：`AGENT_REF=main`。
+| 平台 | 文件 |
+| --- | --- |
+| Windows x64 | `agent-win-x64.exe` |
+| macOS Apple Silicon | `agent-darwin-arm64.tar.gz` |
+| macOS Intel | `agent-darwin-x64.tar.gz` |
+| Linux x64 | `agent-linux-x64.tar.gz` |
+| Linux arm64 | `agent-linux-arm64.tar.gz` |
+| 服务器（Java 17+） | `agent-server.jar` |
 
-发布页：https://github.com/mengzhihua/agent/releases
+```bash
+# Linux / macOS 解开即可跑
+tar -xzf agent-linux-x64.tar.gz
+./agent -V
+
+# 服务端
+./agent serve --port 8080
+java -jar agent-server.jar   # 同样提供 /v1/health 与 POST /v1/prompt
+```
+
+装好后执行 `agent doctor`。新开一个终端即可直接运行 `agent`。之后可用 `agent update` / `agent uninstall`。
+
+指定版本：`AGENT_REF=v0.27.0`。要从源码装 main：`AGENT_REF=main`（此时需要 Node 22）。
+
+macOS 若 Gatekeeper 拦截未公证二进制：`xattr -cr agent`。
+
 
 默认配置写在 `~/.agent/config.json`（命令行和环境变量优先）。补全：
 
@@ -100,6 +123,7 @@ agent session show <id>
 agent session export <id>
 agent session delete <id>
 agent memory show
+agent serve --port 8080
 agent --resume <id> -p "continue"
 agent acp             # JSON-RPC（NDJSON 或 Content-Length；ask 时向客户端要权限；fs/terminal/MCP 走编辑器）
 agent doctor          # 检查 node / sandbox / 浏览器 / PATH / 配置 / git / auth

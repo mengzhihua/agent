@@ -1,6 +1,8 @@
 dist-release/
 node_modules/
 dist/
+server-java/target/
+.cache/
 /.agent/
 /artifacts/
 *.log

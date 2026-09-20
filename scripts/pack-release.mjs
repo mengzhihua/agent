@@ -80,27 +80,8 @@ export function packRelease(opts = {}) {
   };
   fs.writeFileSync(path.join(dest, "package.json"), `${JSON.stringify(releasePkg, null, 2)}\n`);
 
-  const notes = [
-    `# agent ${version}`,
-    "",
-    "Node.js 22+ is required. npm and TypeScript are not.",
-    "",
-    "macOS / Linux:",
-    "",
-    "```bash",
-    "curl -fsSL https://raw.githubusercontent.com/mengzhihua/agent/main/scripts/install.sh | bash",
-    "```",
-    "",
-    "Windows PowerShell:",
-    "",
-    "```powershell",
-    "irm https://raw.githubusercontent.com/mengzhihua/agent/main/scripts/install.ps1 | iex",
-    "```",
-    "",
-    "The installer downloads this release tarball and writes an `agent` shim. Then run `agent doctor`.",
-    "",
-  ].join("\n");
-  fs.writeFileSync(path.join(outDir, "NOTES.md"), notes);
+  writeNotes(outDir, version);
+
 
   const tarball = path.join(outDir, "agent.tgz");
   const versioned = path.join(outDir, `agent-${version}.tgz`);
@@ -114,10 +95,71 @@ export function packRelease(opts = {}) {
   return { version, outDir, tarball, versioned, notes: path.join(outDir, "NOTES.md") };
 }
 
+export function writeNotes(outDir, version) {
+  const notes = [
+    `# agent ${version}`,
+    "",
+    "Preferred: native binaries. Node.js is not required.",
+    "",
+    "| Platform | Asset |",
+    "| --- | --- |",
+    "| Windows x64 | `agent-win-x64.exe` or `agent-win-x64.zip` |",
+    "| Windows arm64 | `agent-win-arm64.exe` |",
+    "| macOS Apple Silicon | `agent-darwin-arm64.tar.gz` |",
+    "| macOS Intel | `agent-darwin-x64.tar.gz` |",
+    "| Linux x64 | `agent-linux-x64.tar.gz` |",
+    "| Linux arm64 | `agent-linux-arm64.tar.gz` |",
+    "| Server (Java 17+) | `agent-server.jar` |",
+    "| Fallback (needs Node 22) | `agent.tgz` |",
+    "",
+    "Install:",
+    "",
+    "```bash",
+    "curl -fsSL https://raw.githubusercontent.com/mengzhihua/agent/main/scripts/install.sh | bash",
+    "```",
+    "",
+    "```powershell",
+    "irm https://raw.githubusercontent.com/mengzhihua/agent/main/scripts/install.ps1 | iex",
+    "```",
+    "",
+    "HTTP server: `agent serve --port 8080` or `java -jar agent-server.jar`.",
+    "Health: `GET /v1/health` and `GET /actuator/health`. Prompt: `POST /v1/prompt`.",
+    "",
+  ].join("\n");
+  fs.writeFileSync(path.join(outDir, "NOTES.md"), notes);
+  return path.join(outDir, "NOTES.md");
+}
+
+export function writeChecksums(outDir) {
+  const names = fs.readdirSync(outDir).filter((name) => name !== "SHA256SUMS" && name !== "NOTES.md").sort();
+  const lines = names
+    .filter((name) => fs.statSync(path.join(outDir, name)).isFile())
+    .map((name) => `${sha256(path.join(outDir, name))}  ${name}`);
+  fs.writeFileSync(path.join(outDir, "SHA256SUMS"), `${lines.join("\n")}\n`);
+}
+
+export async function packAll(opts = {}) {
+  const packed = packRelease(opts);
+  const argv = opts.argv ?? process.argv.slice(2);
+  const all = Boolean(opts.all || argv.includes("--all"));
+  let nativeFiles = [];
+  if (!argv.includes("--no-native")) {
+    const { packNative } = await import("./pack-native.mjs");
+    const native = await packNative({ from: opts.from, outDir: packed.outDir, all });
+    nativeFiles = native.files;
+  }
+  if (!argv.includes("--no-jar")) {
+    const { packServerJar } = await import("./pack-server-jar.mjs");
+    await packServerJar({ from: opts.from, outDir: packed.outDir, nativeFiles });
+  }
+  writeNotes(packed.outDir, packed.version);
+  writeChecksums(packed.outDir);
+  return packed;
+}
+
 const isMain = process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
 if (isMain) {
-  const packed = packRelease();
+  const packed = await packAll();
   console.log(`Packed agent ${packed.version}`);
-  console.log(packed.tarball);
-  console.log(packed.versioned);
+  console.log(packed.outDir);
 }

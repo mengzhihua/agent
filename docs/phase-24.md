@@ -12,7 +12,7 @@
 4. `agent memory [show]`（`--scope`、`--output-format json`）；交互 `/memory`；ACP `/memory`
 5. `agent init` 生成 `.agent/MEMORY.md`
 
-不做：自动从对话抽取记忆、向量检索、OAuth、SSE、布尔 ACP config、累计 cost、图片 prompt、Docker workspace、云端 VM、Playwright、npm 公有源、单文件原生二进制。GitHub Release 成品包见 [期 25](phase-25.md)。
+不做：自动从对话抽取记忆、向量检索、OAuth、SSE、布尔 ACP config、累计 cost、图片 prompt、Docker workspace、云端 VM、Playwright、npm 公有源。GitHub Release 成品包见 [期 25](phase-25.md)。原生 exe / macOS / Linux 包与 Spring Boot JAR 见 [期 26](phase-26.md)。
 
 ## 怎么跑
 

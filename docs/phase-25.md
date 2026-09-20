@@ -13,7 +13,7 @@
 5. 没有 Release 时退回 main 源码安装；`AGENT_REF=main` 强制源码；`AGENT_REF=v0.26.0` 钉版本
 6. `agent update` 仍走安装脚本，因此也会跟最新 Release
 
-不做：npm 公有源、单文件原生二进制、OAuth、SSE、布尔 ACP config、累计 cost、图片 prompt、Docker workspace、云端 VM、Playwright。
+不做：npm 公有源、OAuth、SSE、布尔 ACP config、累计 cost、图片 prompt、Docker workspace、云端 VM、Playwright。原生 Windows exe / macOS / Linux 包与 Spring Boot JAR 见 [期 26](phase-26.md)。
 
 ## 怎么跑
 

@@ -97,6 +97,7 @@ describe("one-click setup", () => {
     expect(help.stdout).toContain("--quiet");
     expect(help.stdout).toContain("agent session list");
     expect(help.stdout).toContain("agent memory");
+    expect(help.stdout).toContain("agent serve");
     expect(help.stdout).toContain("--file");
   });
 
@@ -107,11 +108,13 @@ describe("one-click setup", () => {
     expect(sh).toContain("setup.mjs");
     expect(sh).toContain("PATH");
     expect(sh).toContain("releases/latest/download/agent.tgz");
+    expect(sh).toContain("agent-${id}.tar.gz");
     expect(sh).toContain("--skip-build");
     expect(ps).toContain("Invoke-WebRequest");
     expect(ps).toContain("setup.mjs");
     expect(ps).toContain("PATH");
     expect(ps).toContain("releases/latest/download/agent.tgz");
+    expect(ps).toContain("agent-$id.exe");
     expect(ps).toContain("--skip-build");
   });
 });

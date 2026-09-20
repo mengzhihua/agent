@@ -46,8 +46,12 @@ export function runUninstall(): void {
     }
   } else {
     fs.rmSync(path.join(prefix, "src"), { recursive: true, force: true });
-    fs.rmSync(path.join(prefix, "bin", process.platform === "win32" ? "agent.cmd" : "agent"), { force: true });
-    fs.rmSync(path.join(userBinDir(), process.platform === "win32" ? "agent.cmd" : "agent"), { force: true });
+    fs.rmSync(path.join(prefix, "bin", "agent"), { force: true });
+    fs.rmSync(path.join(prefix, "bin", "agent.cmd"), { force: true });
+    fs.rmSync(path.join(prefix, "bin", "agent.exe"), { force: true });
+    fs.rmSync(path.join(userBinDir(), "agent"), { force: true });
+    fs.rmSync(path.join(userBinDir(), "agent.cmd"), { force: true });
+    fs.rmSync(path.join(userBinDir(), "agent.exe"), { force: true });
   }
   const binDir = process.platform === "win32" ? path.join(prefix, "bin") : userBinDir();
   removeUserPath(binDir);
