@@ -2,7 +2,7 @@
 
 通用 agent 软件：一个极简的模型–工具循环，外面套 harness。
 
-当前进度：**期 27 — Web 控制台与流式 HTTP**。
+当前进度：**期 28 — CI 全绿才发 GitHub Release**。
 
 - [行业研究](docs/industry-agent-research.md) — Codex、Claude Code、Grok Build、Devin、Cursor、Gemini CLI、Manus、OpenHands 等怎么做，以及通用 harness 的收敛形态
 - [期 0](docs/phase-0.md)
@@ -33,6 +33,7 @@
 - [期 25](docs/phase-25.md)
 - [期 26](docs/phase-26.md)
 - [期 27](docs/phase-27.md)
+- [期 28](docs/phase-28.md)
 
 ## 研究结论（极简）
 
@@ -84,7 +85,9 @@ docker build -t agent . && docker run --rm -p 8080:8080 -e OPENAI_API_KEY agent
 
 装好后执行 `agent doctor`。新开一个终端即可直接运行 `agent`。之后可用 `agent update` / `agent uninstall`。
 
-指定版本：`AGENT_REF=v0.28.0`。要从源码装 main：`AGENT_REF=main`（此时需要 Node 22）。
+指定版本：`AGENT_REF=v0.29.0`。要从源码装 main：`AGENT_REF=main`（此时需要 Node 22）。
+
+合入 `main` 且 CI（Linux / macOS / Windows）全绿后，GitHub Actions 会打 `v*` Release（原生包 + tarball + `agent-server.jar`）。
 
 macOS 若 Gatekeeper 拦截未公证二进制：`xattr -cr agent`。
 

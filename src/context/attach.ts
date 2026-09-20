@@ -46,15 +46,21 @@ export function parseAtMentions(text: string): AttachMention[] {
 export function fileUriToLocalPath(uri: string): string {
   const trimmed = uri.trim();
   if (!trimmed) return trimmed;
-  if (trimmed.startsWith("file://")) {
-    try {
-      return decodeURIComponent(new URL(trimmed).pathname);
-    } catch {
-      return decodeURIComponent(trimmed.slice("file://".length));
-    }
+  let rest = trimmed;
+  if (rest.startsWith("file://")) rest = rest.slice("file://".length);
+  else if (rest.startsWith("file:")) rest = rest.slice("file:".length);
+  else return trimmed;
+  try {
+    rest = decodeURIComponent(rest);
+  } catch {
+    // keep encoded
   }
-  if (trimmed.startsWith("file:")) return trimmed.slice("file:".length);
-  return trimmed;
+  rest = rest.replaceAll("\\", "/");
+  if (/^\/\/localhost\b/i.test(rest)) rest = rest.slice("//localhost".length);
+  else if (/^localhost\//i.test(rest)) rest = rest.slice("localhost".length);
+  rest = rest.replace(/^\/+([A-Za-z]:)/, "$1");
+  if (process.platform === "win32") return rest.replaceAll("/", "\\");
+  return rest;
 }
 
 export function injectAttachments(prompt: string, opts: AttachOptions): string {

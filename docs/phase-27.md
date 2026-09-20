@@ -12,7 +12,7 @@
 4. 只对 POST/DELETE 串行，健康检查和页面在跑 turn 时仍可访问
 5. Spring Boot JAR 同样提供页面和 SSE；`Dockerfile` 跑 `agent serve`；`scripts/agent.service` 给 systemd
 
-不做：OAuth、累计 cost、图片 prompt、Docker workspace / 云端 VM、Playwright、npm 公有源、Apple 公证。
+不做：OAuth、累计 cost、图片 prompt、Docker workspace / 云端 VM、Playwright、npm 公有源、Apple 公证。合入 main 后自动发 GitHub Release 见 [期 28](phase-28.md)。
 
 ## 怎么跑
 

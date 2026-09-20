@@ -8,9 +8,14 @@ import { packageVersion } from "../src/version.js";
 
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
 
+function compileProject() {
+  const tscJs = path.join(root, "node_modules", "typescript", "bin", "tsc");
+  return spawnSync(process.execPath, [tscJs], { cwd: root, encoding: "utf8" });
+}
+
 describe("one-click setup", () => {
   it("writes a user shim that prints the version", () => {
-    const tsc = spawnSync("npx", ["tsc"], { cwd: root, encoding: "utf8", shell: process.platform === "win32" });
+    const tsc = compileProject();
     expect(tsc.status, tsc.stderr || tsc.stdout).toBe(0);
     const prefix = fs.mkdtempSync(path.join(os.tmpdir(), "agent-setup-"));
     const setup = spawnSync(
@@ -100,7 +105,7 @@ describe("one-click setup", () => {
     expect(help.stdout).toContain("agent serve");
     expect(help.stdout).toContain("web console");
     expect(help.stdout).toContain("--file");
-  });
+  }, 60_000);
 
   it("ships unix and windows installers", () => {
     const sh = fs.readFileSync(path.join(root, "scripts/install.sh"), "utf8");
@@ -117,5 +122,18 @@ describe("one-click setup", () => {
     expect(ps).toContain("releases/latest/download/agent.tgz");
     expect(ps).toContain("agent-$id.exe");
     expect(ps).toContain("--skip-build");
+  });
+
+  it("releases only after CI on main succeeds", () => {
+    const release = fs.readFileSync(path.join(root, ".github/workflows/release.yml"), "utf8");
+    const ci = fs.readFileSync(path.join(root, ".github/workflows/ci.yml"), "utf8");
+    expect(ci).toContain("pull_request");
+    expect(release).toContain("workflow_run");
+    expect(release).toContain("workflows: [ci]");
+    expect(release).toContain("conclusion == 'success'");
+    expect(release).toContain("head_branch == 'main'");
+    expect(release).toContain("gh release create");
+    expect(release).toContain("--latest");
+    expect(release).toContain('basename "$f")" = "NOTES.md"');
   });
 });

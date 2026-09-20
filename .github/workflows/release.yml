@@ -1,19 +1,30 @@
 name: release
 
 on:
-  push:
-    branches: [main]
-    tags: ["v*"]
+  workflow_run:
+    workflows: [ci]
+    types: [completed]
   workflow_dispatch:
+
+concurrency:
+  group: release-main
+  cancel-in-progress: false
 
 permissions:
   contents: write
 
 jobs:
   release:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'push' &&
+       github.event.workflow_run.head_branch == 'main')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -37,12 +48,24 @@ jobs:
           set -euo pipefail
           TAG="v${VERSION}"
           shopt -s nullglob
-          assets=(dist-release/*)
+          assets=()
+          for f in dist-release/*; do
+            [ "$(basename "$f")" = "NOTES.md" ] && continue
+            assets+=("$f")
+          done
+          if [ "${#assets[@]}" -eq 0 ]; then
+            echo "No dist-release assets" >&2
+            exit 1
+          fi
+          NOTES="dist-release/NOTES.md"
           if gh release view "$TAG" >/dev/null 2>&1; then
-            echo "Release $TAG exists; uploading assets."
+            echo "Release $TAG exists; uploading assets and marking latest."
             gh release upload "$TAG" "${assets[@]}" --clobber
+            gh release edit "$TAG" --latest --notes-file "$NOTES"
           else
             gh release create "$TAG" "${assets[@]}" \
               --title "agent ${TAG}" \
-              --notes-file dist-release/NOTES.md
+              --notes-file "$NOTES" \
+              --latest
           fi
+          echo "Published https://github.com/${GITHUB_REPOSITORY}/releases/tag/${TAG}"

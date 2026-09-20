@@ -11,7 +11,10 @@ const root = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
 
 describe("release tarball", () => {
   it("packs a prebuilt dist that installs without npm", () => {
-    const tsc = spawnSync("npx", ["tsc"], { cwd: root, encoding: "utf8", shell: process.platform === "win32" });
+    const tsc = spawnSync(process.execPath, [path.join(root, "node_modules", "typescript", "bin", "tsc")], {
+      cwd: root,
+      encoding: "utf8",
+    });
     expect(tsc.status, tsc.stderr || tsc.stdout).toBe(0);
     const outDir = fs.mkdtempSync(path.join(os.tmpdir(), "agent-pack-out-"));
     const packed = packRelease({ from: root, outDir });

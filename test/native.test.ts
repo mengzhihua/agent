@@ -40,7 +40,10 @@ function waitForHealth(url: string, timeoutMs = 15_000): Promise<Record<string, 
 
 describe("native SEA binary", () => {
   it("packs the current platform and runs without node on PATH", async () => {
-    const tsc = spawnSync("npx", ["tsc"], { cwd: root, encoding: "utf8", shell: process.platform === "win32" });
+    const tsc = spawnSync(process.execPath, [path.join(root, "node_modules", "typescript", "bin", "tsc")], {
+      cwd: root,
+      encoding: "utf8",
+    });
     expect(tsc.status, tsc.stderr || tsc.stdout).toBe(0);
     const outDir = fs.mkdtempSync(path.join(os.tmpdir(), "agent-native-"));
     const packed = await packNative({ from: root, outDir, targets: [currentNativeTarget()] });

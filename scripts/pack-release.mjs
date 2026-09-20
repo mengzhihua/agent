@@ -1,7 +1,7 @@
-#!/usr/bin/env node
 /**
  * Pack a runnable GitHub Release tarball: compiled dist + setup scripts.
  * Users need Node.js 22+; they do not need npm or TypeScript.
+ * Run: node scripts/pack-release.mjs
  */
 import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
