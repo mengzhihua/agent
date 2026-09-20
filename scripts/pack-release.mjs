@@ -122,7 +122,8 @@ export function writeNotes(outDir, version) {
     "irm https://raw.githubusercontent.com/mengzhihua/agent/main/scripts/install.ps1 | iex",
     "```",
     "",
-    "HTTP server: `agent serve --port 8080` or `java -jar agent-server.jar`.",
+    "HTTP server: `agent serve --port 8080` opens a web console at `/`. `java -jar agent-server.jar` is the same API.",
+    "Stream a turn: `curl -N localhost:8080/v1/prompt -H 'accept: text/event-stream' -d '{\"prompt\":\"hi\",\"stream\":true}'`.",
     "Health: `GET /v1/health` and `GET /actuator/health`. Prompt: `POST /v1/prompt`.",
     "",
   ].join("\n");

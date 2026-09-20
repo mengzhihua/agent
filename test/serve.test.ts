@@ -30,7 +30,7 @@ describe("agent serve", () => {
     const store = new SessionStore(sessionDir);
     const host = await AgentHost.create(
       config,
-      new ScriptedProvider([{ text: "hello from serve" }]),
+      new ScriptedProvider([{ text: "hello from serve" }, { text: "hello from serve" }]),
       store,
       autoApprover(),
       { connectMcp: false },
@@ -48,6 +48,12 @@ describe("agent serve", () => {
     expect(await health.json()).toMatchObject({ status: "UP", version: packageVersion() });
     const actuator = await fetch(`${server.url}/actuator/health`);
     expect(actuator.status).toBe(200);
+    const html = await fetch(`${server.url}/`);
+    expect(html.status).toBe(200);
+    expect(html.headers.get("content-type")).toContain("text/html");
+    expect(await html.text()).toContain("web console");
+    const catalog = await fetch(`${server.url}/v1`);
+    expect(await catalog.json()).toMatchObject({ name: "agent", version: packageVersion() });
     const denied = await fetch(`${server.url}/v1/sessions`);
     expect(denied.status).toBe(401);
     const listed = await fetch(`${server.url}/v1/sessions`, { headers: { authorization: "Bearer secret" } });
@@ -62,5 +68,16 @@ describe("agent serve", () => {
     const body = (await prompted.json()) as { type: string; text: string; sessionId: string };
     expect(body).toMatchObject({ type: "result", text: "hello from serve" });
     expect(body.sessionId).toBeTruthy();
+    const streamed = await fetch(`${server.url}/v1/prompt`, {
+      method: "POST",
+      headers: { "content-type": "application/json", accept: "text/event-stream", "x-agent-token": "secret" },
+      body: JSON.stringify({ prompt: "again", workspace, stream: true }),
+    });
+    expect(streamed.status).toBe(200);
+    expect(streamed.headers.get("content-type")).toContain("text/event-stream");
+    const sse = await streamed.text();
+    expect(sse).toContain("text-delta");
+    expect(sse).toContain("hello from serve");
+    expect(sse).toContain('"type":"result"');
   });
 });

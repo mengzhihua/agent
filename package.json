@@ -1,7 +1,7 @@
 {
   "name": "agent",
   "private": true,
-  "version": "0.27.0",
+  "version": "0.28.0",
   "type": "module",
   "description": "General-purpose agent harness: one tool loop, local workspace, Chrome, sandbox, eval, ACP.",
   "bin": {
@@ -14,8 +14,8 @@
   ],
   "scripts": {
     "agent": "node dist/cli.js",
-    "build": "tsc",
-    "prepare": "tsc",
+    "build": "tsc && node scripts/copy-web.mjs",
+    "prepare": "npm run build",
     "setup": "node scripts/setup.mjs --from .",
     "pack:release": "node scripts/pack-release.mjs",
     "pack:native": "node scripts/pack-native.mjs",

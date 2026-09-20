@@ -64,6 +64,9 @@ describe.skipIf(!hasJava || process.platform !== "linux")("spring boot jar", () 
       expect(health.runtime).toBe("spring-boot");
       const actuator = await waitForHealth("http://127.0.0.1:18080/actuator/health");
       expect(actuator.status).toBe("UP");
+      const page = await fetch("http://127.0.0.1:18080/");
+      expect(page.headers.get("content-type") || "").toContain("text/html");
+      expect(await page.text()).toContain("web console");
     } finally {
       child.kill("SIGTERM");
     }

@@ -46,6 +46,7 @@ function usage(): string {
        agent update
        agent uninstall
        agent serve [--port 8080] [--host 0.0.0.0]
+           HTTP + web console at /  (SSE: POST /v1/prompt)
        agent completion bash|zsh|powershell
 
   -p, --print            Run one prompt and exit

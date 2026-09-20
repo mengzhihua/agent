@@ -20,6 +20,8 @@ public class TokenFilter extends OncePerRequestFilter {
     String path = request.getRequestURI();
     boolean open =
         path.equals("/")
+            || path.equals("/ui")
+            || path.equals("/v1")
             || path.equals("/v1/health")
             || path.startsWith("/actuator/health")
             || "OPTIONS".equalsIgnoreCase(request.getMethod());

@@ -15,7 +15,7 @@
 4. `server-java/` Spring Boot 3：`java -jar agent-server.jar`（Java 17+）。JAR 内嵌当前打好的原生二进制，也可用 `AGENT_BIN` 指向 `agent` / `.exe`
 5. `scripts/pack-release.mjs --all` 打 tarball + 全平台二进制 + JAR，Release workflow 一并上传
 
-不做：npm 公有源、Apple 公证/Windows 签名证书、OAuth、SSE、布尔 ACP config、累计 cost、图片 prompt、Docker workspace、云端 VM、Playwright。macOS 未公证时可能要 `xattr -cr agent`。
+不做：npm 公有源、Apple 公证/Windows 签名证书、OAuth、累计 cost、图片 prompt、Docker workspace、云端 VM、Playwright。Web 控制台与 SSE 见 [期 27](phase-27.md)。macOS 未公证时可能要 `xattr -cr agent`。
 
 ## 怎么跑
 
