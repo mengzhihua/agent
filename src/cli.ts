@@ -29,6 +29,7 @@ import {
 import { runSelfUpdate, runUninstall } from "./self_update.js";
 import { SessionStore } from "./session/store.js";
 import type { Approver, BrowserMode, LoopEvent, ProviderName, SandboxMode } from "./types.js";
+import { startAgentServer } from "./serve.js";
 import { packageVersion } from "./version.js";
 
 function usage(): string {
@@ -44,6 +45,7 @@ function usage(): string {
        agent logout [--provider openai|anthropic|xai]
        agent update
        agent uninstall
+       agent serve [--port 8080] [--host 0.0.0.0]
        agent completion bash|zsh|powershell
 
   -p, --print            Run one prompt and exit
@@ -73,7 +75,7 @@ Keys: env vars override ~/.agent/credentials.json (agent login)
 
 Install (macOS/Linux): curl -fsSL https://raw.githubusercontent.com/mengzhihua/agent/main/scripts/install.sh | bash
 Install (Windows):     irm https://raw.githubusercontent.com/mengzhihua/agent/main/scripts/install.ps1 | iex
-Install uses the latest GitHub Release tarball (Node 22; npm not required). AGENT_REF=main installs from source.
+Install prefers a native binary from GitHub Releases (Windows .exe, macOS/Linux tarball; Node not required). AGENT_REF=main installs from source. Server: agent serve or java -jar agent-server.jar.
 
 Project files: AGENTS.md, .agentignore, .agent/skills/*/SKILL.md, .agent/mcp.json, .agent/hooks.json, .agent/MEMORY.md
 Deliverables land in <workspace>/artifacts (or AGENT_ARTIFACTS).
@@ -146,6 +148,11 @@ async function main(): Promise<void> {
 
   if (process.argv[2] === "eval") {
     await runEvalCommand(process.argv.slice(3));
+    return;
+  }
+
+  if (process.argv[2] === "serve") {
+    await runServeCommand(process.argv.slice(3));
     return;
   }
 
@@ -268,6 +275,38 @@ async function runLoginCommand(argv: string[]): Promise<void> {
   }
   const file = applyLogin({ provider, apiKey: key, baseUrl: values["base-url"] });
   output.write(`Saved ${provider} credentials to ${file}\n`);
+}
+
+async function runServeCommand(argv: string[]): Promise<void> {
+  const { values } = parseArgs({
+    args: argv,
+    options: {
+      host: { type: "string" },
+      port: { type: "string" },
+      token: { type: "string" },
+      workspace: { type: "string", short: "w" },
+      "session-dir": { type: "string" },
+    },
+  });
+  const config = loadConfig({
+    workspace: values.workspace,
+    sessionDir: values["session-dir"],
+    approvalMode: "auto",
+  });
+  const started = await startAgentServer({
+    host: values.host,
+    port: values.port ? Number(values.port) : undefined,
+    token: values.token,
+    config,
+  });
+  stderr.write(`agent ${packageVersion()} serve ${started.url}\n`);
+  await new Promise<void>((resolve) => {
+    const stop = () => {
+      started.close().finally(() => resolve());
+    };
+    process.on("SIGINT", stop);
+    process.on("SIGTERM", stop);
+  });
 }
 
 async function runEvalCommand(argv: string[]): Promise<void> {

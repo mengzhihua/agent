@@ -18,11 +18,15 @@ jobs:
         with:
           node-version: 22
           cache: npm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
       - run: npm ci
       - run: npx tsc --noEmit
       - run: npm test
       - run: npm run build
-      - run: node scripts/pack-release.mjs
+      - run: node scripts/pack-release.mjs --all
       - id: ver
         run: echo "version=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
       - name: Publish GitHub Release
@@ -32,11 +36,13 @@ jobs:
         run: |
           set -euo pipefail
           TAG="v${VERSION}"
+          shopt -s nullglob
+          assets=(dist-release/*)
           if gh release view "$TAG" >/dev/null 2>&1; then
             echo "Release $TAG exists; uploading assets."
-            gh release upload "$TAG" dist-release/agent.tgz dist-release/agent-${VERSION}.tgz dist-release/SHA256SUMS dist-release/NOTES.md --clobber
+            gh release upload "$TAG" "${assets[@]}" --clobber
           else
-            gh release create "$TAG" dist-release/agent.tgz dist-release/agent-${VERSION}.tgz dist-release/SHA256SUMS dist-release/NOTES.md \
+            gh release create "$TAG" "${assets[@]}" \
               --title "agent ${TAG}" \
               --notes-file dist-release/NOTES.md
           fi

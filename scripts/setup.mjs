@@ -147,7 +147,9 @@ async function stripPath(from, prefix, binDir) {
 function uninstall(prefix) {
   const binDir = path.join(prefix, "bin");
   const src = path.join(prefix, "src");
-  fs.rmSync(path.join(binDir, process.platform === "win32" ? "agent.cmd" : "agent"), { force: true });
+  fs.rmSync(path.join(binDir, "agent"), { force: true });
+  fs.rmSync(path.join(binDir, "agent.cmd"), { force: true });
+  fs.rmSync(path.join(binDir, "agent.exe"), { force: true });
   if (process.platform !== "win32") {
     fs.rmSync(path.join(os.homedir(), ".local", "bin", "agent"), { force: true });
   }

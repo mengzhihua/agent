@@ -1,5 +1,5 @@
 # One-click install for Windows PowerShell.
-# Prefers the latest GitHub Release tarball (compiled dist, Node 22 only).
+# Prefers a native GitHub Release .exe (no Node.js). Falls back to agent.tgz + Node 22.
 #   irm https://raw.githubusercontent.com/mengzhihua/agent/main/scripts/install.ps1 | iex
 # Source from main instead: $env:AGENT_REF = "main"; irm ... | iex
 $ErrorActionPreference = "Stop"
@@ -8,6 +8,7 @@ $Repo = if ($env:AGENT_REPO) { $env:AGENT_REPO } else { "mengzhihua/agent" }
 $Ref = if ($env:AGENT_REF) { $env:AGENT_REF } else { "latest" }
 $Prefix = if ($env:AGENT_PREFIX) { $env:AGENT_PREFIX } else { Join-Path $HOME ".agent" }
 $Src = Join-Path $Prefix "src"
+$BinDir = Join-Path $Prefix "bin"
 
 function Assert-Command($Name) {
   if (-not (Get-Command $Name -ErrorAction SilentlyContinue)) {
@@ -15,26 +16,77 @@ function Assert-Command($Name) {
   }
 }
 
+function Save-Url($Url, $Dest) {
+  Invoke-WebRequest -Uri $Url -OutFile $Dest -UseBasicParsing
+}
+
+function Add-UserPath($Dir) {
+  $current = [Environment]::GetEnvironmentVariable("Path", "User")
+  if ($null -eq $current) { $current = "" }
+  $parts = @()
+  foreach ($item in $current.Split(";")) {
+    if (-not $item) { continue }
+    if ($item.TrimEnd("\").ToLower() -eq $Dir.TrimEnd("\").ToLower()) { continue }
+    $parts += $item
+  }
+  $joined = $Dir
+  if ($parts.Count -gt 0) { $joined = $Dir + ";" + ($parts -join ";") }
+  [Environment]::SetEnvironmentVariable("Path", $joined, "User")
+}
+
+function Get-NativeId {
+  $arch = $env:PROCESSOR_ARCHITECTURE
+  if ($arch -eq "ARM64") { return "win-arm64" }
+  return "win-x64"
+}
+
+function Get-ReleaseUrl($Asset) {
+  if ($Ref -eq "latest") {
+    return "https://github.com/$Repo/releases/latest/download/$Asset"
+  }
+  $tag = $Ref
+  if (-not $tag.StartsWith("v")) { $tag = "v$Ref" }
+  return "https://github.com/$Repo/releases/download/$tag/$Asset"
+}
+
+if ($args -contains "--uninstall") {
+  if (Test-Path (Join-Path $Src "scripts\setup.mjs")) {
+    Assert-Command node
+    & node (Join-Path $Src "scripts\setup.mjs") --prefix $Prefix --from $Src --uninstall
+  } else {
+    Remove-Item -Recurse -Force $Src -ErrorAction SilentlyContinue
+    Remove-Item -Force (Join-Path $BinDir "agent.exe") -ErrorAction SilentlyContinue
+    Remove-Item -Force (Join-Path $BinDir "agent.cmd") -ErrorAction SilentlyContinue
+  }
+  return
+}
+
+function Install-Native {
+  if ($Ref -eq "main" -or $Ref -eq "master") { return $false }
+  $id = Get-NativeId
+  New-Item -ItemType Directory -Force -Path $BinDir | Out-Null
+  $dest = Join-Path $BinDir "agent.exe"
+  try {
+    Write-Host "Downloading native $id ..."
+    Save-Url (Get-ReleaseUrl "agent-$id.exe") $dest
+  } catch {
+    return $false
+  }
+  Add-UserPath $BinDir
+  Write-Host "Installed $dest"
+  Write-Host "Open a new terminal so PATH picks up agent, then run: agent doctor"
+  return $true
+}
+
+if (Install-Native) { return }
+
+Write-Host "Native binary not used; installing the Node 22 tarball (or source)."
 Assert-Command node
 Assert-Command tar
 
 $major = [int](& node -p "Number(process.versions.node.split('.')[0])")
 if ($major -lt 22) {
   throw "Node.js 22+ is required (found $(node -v))."
-}
-
-if ($args -contains "--uninstall") {
-  if (Test-Path (Join-Path $Src "scripts\setup.mjs")) {
-    & node (Join-Path $Src "scripts\setup.mjs") --prefix $Prefix --from $Src --uninstall
-  } else {
-    Remove-Item -Recurse -Force $Src -ErrorAction SilentlyContinue
-    Remove-Item -Force (Join-Path $Prefix "bin\agent.cmd") -ErrorAction SilentlyContinue
-  }
-  return
-}
-
-function Save-Url($Url, $Dest) {
-  Invoke-WebRequest -Uri $Url -OutFile $Dest -UseBasicParsing
 }
 
 New-Item -ItemType Directory -Force -Path $Prefix | Out-Null

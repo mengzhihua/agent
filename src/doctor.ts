@@ -9,6 +9,7 @@ import { authReport } from "./credentials.js";
 import { inspectGit } from "./git-context.js";
 import { detectSandboxBackend } from "./sandbox/plan.js";
 import { userConfigPath } from "./user-config.js";
+import { runningAsSea } from "./sea.js";
 import { packageRoot, packageVersion } from "./version.js";
 
 export function doctorReport(): string {
@@ -18,7 +19,8 @@ export function doctorReport(): string {
   const cfg = userConfigPath();
   const lines = [
     `agent ${packageVersion()}`,
-    `node ${process.version}`,
+    `node ${process.version}${runningAsSea() ? " (sea)" : ""}`,
+    `runtime ${runningAsSea() ? `sea ${process.execPath}` : "node"}`,
     `os ${process.platform} ${process.arch} (${os.release()})`,
     `shell ${defaultShell().command}`,
     `install ${process.env.AGENT_INSTALL_ROOT ?? packageRoot() ?? defaultInstallPrefix()}`,
