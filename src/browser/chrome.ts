@@ -2,7 +2,7 @@ import { spawn, type ChildProcess } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { chromeCandidates, killProcessTree, whichProgram } from "../platform.js";
+import { chromeCandidates, killProcessTree, pidAlive, whichProgram } from "../platform.js";
 import { axToNodes, type MappedNode } from "./ax.js";
 import { openCdp, type CdpClient } from "./cdp.js";
 import { HtmlDriver } from "./html.js";
@@ -99,13 +99,13 @@ export class ChromeDriver implements BrowserDriver {
     this.sessionId = undefined;
     const pid = this.proc?.pid;
     this.proc = undefined;
-    if (pid) killProcessTree(pid);
+    if (pid) {
+      killProcessTree(pid);
+      await waitUntilGone(pid, 2_000);
+    }
     const profile = this.profileDir;
     this.profileDir = undefined;
-    if (profile) {
-      await delay(50);
-      fs.rmSync(profile, { recursive: true, force: true, maxRetries: 8, retryDelay: 50 });
-    }
+    if (profile) await removeChromeProfile(profile);
     this.current = { url: "about:blank", title: "", nodes: [] };
     this.currentHtml = "";
     this.refs.clear();
@@ -216,6 +216,28 @@ function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+async function waitUntilGone(pid: number, timeoutMs: number): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline && pidAlive(pid)) await delay(50);
+}
+
+const TRANSIENT_RM = new Set(["ENOTEMPTY", "EBUSY", "EPERM", "EACCES"]);
+
+/** Best-effort: leftover Chrome files must not fail a successful session. */
+export async function removeChromeProfile(dir: string, attempts = 6): Promise<void> {
+  await delay(100);
+  for (let attempt = 0; attempt < attempts; attempt++) {
+    try {
+      fs.rmSync(dir, { recursive: true, force: true, maxRetries: 8, retryDelay: 80 });
+      return;
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException).code;
+      if (!code || !TRANSIENT_RM.has(code) || attempt === attempts - 1) return;
+      await delay(80 * (attempt + 1));
+    }
+  }
+}
+
 function launchChrome(
   chromePath: string,
   profileDir: string,
@@ -239,9 +261,11 @@ function launchChrome(
       "--mute-audio",
       "--hide-scrollbars",
       "--password-store=basic",
+      "--disable-crash-reporter",
+      "--disable-breakpad",
       "about:blank",
     ];
-    const proc = spawn(chromePath, args, { stdio: ["ignore", "pipe", "pipe"] });
+    const proc = spawn(chromePath, args, { stdio: ["ignore", "pipe", "pipe"], detached: true });
     onProc(proc);
     let buf = "";
     const onAbort = () => {

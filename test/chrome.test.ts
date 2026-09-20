@@ -1,7 +1,10 @@
+import fs from "node:fs";
 import http from "node:http";
 import type { AddressInfo } from "node:net";
+import os from "node:os";
+import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { ChromeDriver, findChrome } from "../src/browser/chrome.js";
+import { ChromeDriver, findChrome, removeChromeProfile } from "../src/browser/chrome.js";
 import { loadConfig } from "../src/config.js";
 
 const PAGE = `<!doctype html>
@@ -35,6 +38,53 @@ async function serve(html: string): Promise<{ url: string; close: () => Promise<
     });
   });
 }
+
+describe("chrome profile cleanup", () => {
+  it("deletes a nested profile directory", async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "agent-chrome-"));
+    fs.mkdirSync(path.join(dir, "Default"), { recursive: true });
+    fs.writeFileSync(path.join(dir, "Default", "Cookies"), "x");
+    await removeChromeProfile(dir, 2);
+    expect(fs.existsSync(dir)).toBe(false);
+  });
+
+  it("retries ENOTEMPTY then succeeds", async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "agent-chrome-"));
+    fs.writeFileSync(path.join(dir, "Default"), "x");
+    const orig = fs.rmSync;
+    let calls = 0;
+    fs.rmSync = ((target, opts) => {
+      calls += 1;
+      if (calls < 3) {
+        const err = new Error("directory not empty") as NodeJS.ErrnoException;
+        err.code = "ENOTEMPTY";
+        throw err;
+      }
+      return orig.call(fs, target, opts);
+    }) as typeof fs.rmSync;
+    try {
+      await removeChromeProfile(dir, 4);
+      expect(fs.existsSync(dir)).toBe(false);
+      expect(calls).toBeGreaterThanOrEqual(3);
+    } finally {
+      fs.rmSync = orig;
+    }
+  });
+
+  it("does not throw when the profile stays busy", async () => {
+    const orig = fs.rmSync;
+    fs.rmSync = (() => {
+      const err = new Error("directory not empty") as NodeJS.ErrnoException;
+      err.code = "ENOTEMPTY";
+      throw err;
+    }) as typeof fs.rmSync;
+    try {
+      await expect(removeChromeProfile("/tmp/agent-chrome-busy", 2)).resolves.toBeUndefined();
+    } finally {
+      fs.rmSync = orig;
+    }
+  });
+});
 
 describe("chrome backend detection", () => {
   it("selects chrome when the binary exists", () => {

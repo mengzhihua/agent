@@ -4,7 +4,7 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { findChrome } from "../src/browser/chrome.js";
 import { doctorReport } from "../src/doctor.js";
-import { chromeCandidates, defaultShell, whichProgram } from "../src/platform.js";
+import { chromeCandidates, defaultShell, killProcessTree, pidAlive, whichProgram } from "../src/platform.js";
 import { packageVersion } from "../src/version.js";
 
 describe("platform", () => {
@@ -34,6 +34,12 @@ describe("platform", () => {
     } else {
       expect(list).toContain("google-chrome");
     }
+  });
+
+  it("detects a live process id", () => {
+    expect(pidAlive(process.pid)).toBe(true);
+    expect(pidAlive(1_000_000_007)).toBe(false);
+    expect(() => killProcessTree(1_000_000_007)).not.toThrow();
   });
 
   it("finds an explicit browser binary path", () => {
