@@ -4,6 +4,7 @@ import {
   encodeJsonResult,
   encodeStreamLine,
   formatEvalResults,
+  formatSessionFork,
   formatSessionDelete,
   formatSessionList,
   formatSessionShow,
@@ -93,6 +94,11 @@ describe("output format", () => {
     expect(JSON.parse(formatSessionShow(session, "json"))).toMatchObject({ id: "s1", title: "hello" });
     expect(formatSessionDelete("s1", "text")).toBe("Deleted s1");
     expect(JSON.parse(formatSessionDelete("s1", "json"))).toEqual({ id: "s1", deleted: true });
+    expect(formatSessionFork({ id: "s2", forkedFrom: "s1" }, "text")).toBe("Forked s1 -> s2");
+    expect(JSON.parse(formatSessionFork({ id: "s2", forkedFrom: "s1" }, "json"))).toEqual({
+      id: "s2",
+      forkedFrom: "s1",
+    });
   });
 
   it("encodes eval results as a machine-readable report", () => {

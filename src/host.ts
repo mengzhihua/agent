@@ -128,6 +128,17 @@ export class AgentHost {
     runtime.files = diskFileIo(runtime.workspace, extraRoots);
   }
 
+  forkSession(sourceId: string, opts: { untilEventId?: string } = {}): string {
+    if (!this.store.exists(sourceId)) {
+      throw new Error(`session not found: ${sourceId}`);
+    }
+    const forked = this.store.fork(sourceId, opts);
+    const extraRoots = this.extraRootsFor(sourceId);
+    this.runtimeFor(forked.id);
+    if (extraRoots.length) this.setSessionRoots(forked.id, extraRoots);
+    return forked.id;
+  }
+
   resume(sessionId: string, cwd?: string): void {
     if (!this.store.exists(sessionId)) {
       throw new Error(`session not found: ${sessionId}`);

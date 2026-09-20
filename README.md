@@ -2,7 +2,7 @@
 
 通用 agent 软件：一个极简的模型–工具循环，外面套 harness。
 
-当前进度：**期 28 — CI 全绿才发 GitHub Release**。
+当前进度：**期 29 — 会话 fork**。
 
 - [行业研究](docs/industry-agent-research.md) — Codex、Claude Code、Grok Build、Devin、Cursor、Gemini CLI、Manus、OpenHands 等怎么做，以及通用 harness 的收敛形态
 - [期 0](docs/phase-0.md)
@@ -34,6 +34,7 @@
 - [期 26](docs/phase-26.md)
 - [期 27](docs/phase-27.md)
 - [期 28](docs/phase-28.md)
+- [期 29](docs/phase-29.md)
 
 ## 研究结论（极简）
 
@@ -85,7 +86,7 @@ docker build -t agent . && docker run --rm -p 8080:8080 -e OPENAI_API_KEY agent
 
 装好后执行 `agent doctor`。新开一个终端即可直接运行 `agent`。之后可用 `agent update` / `agent uninstall`。
 
-指定版本：`AGENT_REF=v0.29.0`。要从源码装 main：`AGENT_REF=main`（此时需要 Node 22）。
+指定版本：`AGENT_REF=v0.30.0`。要从源码装 main：`AGENT_REF=main`（此时需要 Node 22）。
 
 合入 `main` 且 CI（Linux / macOS / Windows）全绿后，GitHub Actions 会打 `v*` Release（原生包 + tarball + `agent-server.jar`）。
 
@@ -126,6 +127,7 @@ agent --list
 agent session list
 agent session show <id>
 agent session export <id>
+agent session fork <id>
 agent session delete <id>
 agent memory show
 agent serve --port 8080  # 浏览器打开 / ；SSE：Accept text/event-stream
@@ -139,7 +141,7 @@ agent logout          # 删除保存的 key
 agent update          # 重跑一键安装
 agent uninstall       # 移除 shim 和 PATH
 agent completion bash # 输出 bash 补全
-agent                 # 交互（/plan /execute /skills /memory；ask_user 走终端，ACP 走 elicitation）
+agent                 # 交互（/plan /execute /skills /memory /fork；ask_user 走终端，ACP 走 elicitation）
 ```
 
 仓库内开发也可以：`npm run agent -- -y -p "..."`（走编译后的 `dist/cli.js`）。

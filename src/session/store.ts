@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { redactSecrets } from "../credentials.js";
+import { newSessionId, nowIso } from "../ids.js";
 import type { SessionEvent } from "../types.js";
 import { ensureDir } from "../workspace.js";
 
@@ -46,6 +47,32 @@ export class SessionStore {
     if (fs.existsSync(file)) fs.unlinkSync(file);
   }
 
+  fork(sourceId: string, opts: { untilEventId?: string } = {}): { id: string; forkedFrom: string } {
+    const events = this.read(sourceId);
+    let copied = events;
+    if (opts.untilEventId) {
+      const idx = events.findIndex((event) => "id" in event && event.id === opts.untilEventId);
+      if (idx === -1) throw new Error(`event not found: ${opts.untilEventId}`);
+      copied = events.slice(0, idx + 1);
+    }
+    const meta = copied.find((event) => event.type === "session_meta");
+    if (!meta || meta.type !== "session_meta") {
+      throw new Error(`session not found: ${sourceId}`);
+    }
+    const id = newSessionId();
+    this.create({
+      ...meta,
+      id,
+      timestamp: nowIso(),
+      forkedFrom: sourceId,
+    });
+    for (const event of copied) {
+      if (event.type === "session_meta") continue;
+      this.append(id, event);
+    }
+    return { id, forkedFrom: sourceId };
+  }
+
   inspect(sessionId: string): SessionInspect {
     const events = this.read(sessionId);
     const meta = events.find((event) => event.type === "session_meta");
@@ -61,6 +88,7 @@ export class SessionStore {
       model: meta.model,
       provider: meta.provider,
       title: firstUser && firstUser.type === "user" ? sessionTitle(firstUser.text) : undefined,
+      forkedFrom: meta.forkedFrom,
       events,
     };
   }
@@ -83,6 +111,7 @@ export class SessionStore {
             cwd: meta.cwd,
             model: meta.model,
             title: firstUser && firstUser.type === "user" ? sessionTitle(firstUser.text) : undefined,
+            forkedFrom: meta.forkedFrom,
           });
         }
       } catch {
@@ -99,6 +128,7 @@ export interface SessionListRow {
   cwd: string;
   model: string;
   title?: string;
+  forkedFrom?: string;
 }
 
 export interface SessionInspect {
@@ -108,6 +138,7 @@ export interface SessionInspect {
   model: string;
   provider: string;
   title?: string;
+  forkedFrom?: string;
   events: SessionEvent[];
 }
 

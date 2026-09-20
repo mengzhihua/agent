@@ -11,7 +11,7 @@
 3. Windows CI：去掉 pack 脚本 shebang（Vitest 解析失败）、`file://` 盘符路径、默认测试超时 30s、zip 解压不依赖 `python3`
 4. 版本 `0.29.0`
 
-不做：OAuth、累计 cost、图片 prompt、Docker workspace / 云端 VM、Playwright、npm 公有源、Apple 公证。版本号仍由合入前的 `package.json` 决定（同一版本重复合入会更新该 Release 的资源）。
+不做：OAuth、累计 cost、图片 prompt、Docker workspace / 云端 VM、Playwright、npm 公有源、Apple 公证。版本号仍由合入前的 `package.json` 决定（同一版本重复合入会更新该 Release 的资源）。会话 fork 见 [期 29](phase-29.md)。
 
 ## 怎么跑
 

@@ -21,6 +21,7 @@ import {
   encodeStreamLine,
   formatEvalResults,
   formatSessionDelete,
+  formatSessionFork,
   formatSessionList,
   formatSessionShow,
   parseOutputFormat,
@@ -36,7 +37,7 @@ function usage(): string {
   return `Usage: agent [options] [prompt]
        agent acp
        agent eval <file-or-dir>
-       agent session list|show|delete|export [id]
+       agent session list|show|delete|export|fork [id]
        agent memory [show]
        agent doctor
        agent config
@@ -335,6 +336,7 @@ function runSessionCommand(argv: string[]): void {
     options: {
       "output-format": { type: "string" },
       "session-dir": { type: "string" },
+      until: { type: "string" },
     },
   });
   const action = positionals[0] ?? "list";
@@ -360,7 +362,13 @@ function runSessionCommand(argv: string[]): void {
     output.write(`${formatSessionDelete(sessionId, machine)}\n`);
     return;
   }
-  throw new Error("usage: agent session list|show|delete|export [id]");
+  if (action === "fork") {
+    if (!sessionId) throw new Error("usage: agent session fork <id> [--until <event-id>]");
+    const forked = store.fork(sessionId, { untilEventId: values.until });
+    output.write(`${formatSessionFork(forked, machine)}\n`);
+    return;
+  }
+  throw new Error("usage: agent session list|show|delete|export|fork [id]");
 }
 
 function runMemoryCommand(argv: string[]): void {
@@ -396,6 +404,7 @@ function runMemoryCommand(argv: string[]): void {
 async function interactive(host: AgentHost, sessionId: string): Promise<void> {
   const rl = createInterface({ input, output, terminal: true });
   console.log("Type a task. /help for commands. Ctrl+C cancels the current turn.");
+  let current = sessionId;
   let running: AbortController | null = null;
 
   const onSigint = () => {
@@ -413,11 +422,17 @@ async function interactive(host: AgentHost, sessionId: string): Promise<void> {
       if (!line) continue;
       if (line === "/quit" || line === "/exit") break;
       if (line === "/help") {
-        console.log("/quit  /yes  /ask  /plan  /execute  /skills  /session  /memory");
+        console.log("/quit  /yes  /ask  /plan  /execute  /skills  /session  /fork  /memory");
         continue;
       }
       if (line === "/session") {
-        console.log(sessionId);
+        console.log(current);
+        continue;
+      }
+      if (line === "/fork") {
+        const next = host.forkSession(current);
+        console.log(`Forked ${current} -> ${next}`);
+        current = next;
         continue;
       }
       if (line === "/memory") {
@@ -456,7 +471,7 @@ async function interactive(host: AgentHost, sessionId: string): Promise<void> {
         host.approver = makeReadlineApprover(rl);
       }
       host.askUser = makeAskUser(rl);
-      await renderTurn(host, sessionId, line, running.signal);
+      await renderTurn(host, current, line, running.signal);
       running = null;
     }
   } finally {

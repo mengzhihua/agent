@@ -341,7 +341,7 @@ export async function dispatch(
           loadSession: true,
           promptCapabilities: { image: false, audio: false, embeddedContext: true },
           mcpCapabilities: { http: true, sse: false },
-          sessionCapabilities: { additionalDirectories: {}, resume: {}, close: {}, list: {}, delete: {} },
+          sessionCapabilities: { additionalDirectories: {}, resume: {}, close: {}, list: {}, delete: {}, fork: {} },
         },
         agentInfo: { name: "agent", version: packageVersion() },
         authMethods: [],
@@ -394,6 +394,18 @@ export async function dispatch(
       }
       await host.deleteSession(sessionId);
       return {};
+    }
+    case "session/fork": {
+      const sourceId = String(req.params?.sessionId ?? "");
+      const untilEventId = typeof req.params?.untilEventId === "string" ? req.params.untilEventId : undefined;
+      const sessionId = host.forkSession(sourceId, { untilEventId });
+      sessions.add(sessionId);
+      const extra = parseAdditionalDirectories(req.params?.additionalDirectories);
+      if (extra.length) host.setSessionRoots(sessionId, extra);
+      await host.attachSessionMcp(sessionId, req.params?.mcpServers);
+      notifyAvailableCommands(sessionId, notify);
+      notifyUsage(host, sessionId, notify);
+      return { sessionId, forkedFrom: sourceId, modes: modeState(host.config.runMode), configOptions: acpConfigOptions(host) };
     }
     case "session/set_mode": {
       const sessionId = String(req.params?.sessionId ?? "");
@@ -609,6 +621,7 @@ export function toAcpSessionInfo(row: SessionListRow, extraRoots: string[] = [])
     updatedAt: row.timestamp,
   };
   if (row.title) info.title = row.title;
+  if (row.forkedFrom) info.forkedFrom = row.forkedFrom;
   if (extraRoots.length > 0) info.additionalDirectories = extraRoots;
   return info;
 }
@@ -616,12 +629,14 @@ export function toAcpSessionInfo(row: SessionListRow, extraRoots: string[] = [])
 function sessionInfoUpdate(host: AgentHost, sessionId: string): Record<string, unknown> | undefined {
   if (!host.store.exists(sessionId)) return undefined;
   const events = host.store.read(sessionId);
+  const meta = events.find((event) => event.type === "session_meta");
   const firstUser = events.find((event) => event.type === "user");
   const last = events.at(-1);
   const update: Record<string, unknown> = { sessionUpdate: "session_info_update" };
   if (firstUser && firstUser.type === "user") update.title = sessionTitle(firstUser.text);
   if (last?.timestamp) update.updatedAt = last.timestamp;
-  return update.title || update.updatedAt ? update : undefined;
+  if (meta && meta.type === "session_meta" && meta.forkedFrom) update.forkedFrom = meta.forkedFrom;
+  return update.title || update.updatedAt || update.forkedFrom ? update : undefined;
 }
 
 async function restoreSession(

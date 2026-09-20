@@ -34,6 +34,34 @@ describe("session store", () => {
     store.delete("s1");
     expect(() => store.inspect("s1")).toThrow(/session not found/);
   });
+
+  it("forks a transcript without mutating the source", () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "agent-fork-"));
+    const store = new SessionStore(dir);
+    store.create({
+      type: "session_meta",
+      id: "s1",
+      timestamp: "2026-09-20T00:00:00.000Z",
+      cwd: dir,
+      model: "test",
+      provider: "scripted",
+    });
+    store.append("s1", { type: "user", id: "u1", timestamp: "2026-09-20T00:00:01.000Z", text: "hello" });
+    store.append("s1", { type: "assistant", id: "a1", timestamp: "2026-09-20T00:00:02.000Z", text: "hi" });
+    store.append("s1", { type: "user", id: "u2", timestamp: "2026-09-20T00:00:03.000Z", text: "later" });
+    const forked = store.fork("s1", { untilEventId: "a1" });
+    expect(forked.forkedFrom).toBe("s1");
+    expect(forked.id).not.toBe("s1");
+    const child = store.read(forked.id);
+    expect(child[0]).toMatchObject({ type: "session_meta", id: forked.id, forkedFrom: "s1" });
+    expect(child.map((event) => event.type)).toEqual(["session_meta", "user", "assistant"]);
+    expect(store.read("s1")).toHaveLength(4);
+    store.append(forked.id, { type: "user", id: "u3", timestamp: "2026-09-20T00:00:04.000Z", text: "branch" });
+    expect(store.read("s1").some((event) => event.type === "user" && event.text === "branch")).toBe(false);
+    expect(store.inspect(forked.id).forkedFrom).toBe("s1");
+    expect(assembleMessages(store.read(forked.id)).at(-1)).toMatchObject({ role: "assistant", content: "hi" });
+    expect(() => store.fork("missing")).toThrow(/session not found/);
+  });
 });
 
 describe("assembleMessages", () => {
