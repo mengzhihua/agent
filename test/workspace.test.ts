@@ -17,6 +17,12 @@ describe("workspace paths", () => {
     expect(() => resolveInWorkspace(root, "../secret")).toThrow(/escapes workspace/);
   });
 
+  it("keeps absolute paths that stay in the workspace", () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "agent-ws-abs-"));
+    const file = path.join(root, "note.txt");
+    expect(resolveInWorkspace(root, file)).toBe(path.resolve(file));
+  });
+
   it("allows extra roots for sibling and absolute paths", () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "agent-ws-"));
     const extra = fs.mkdtempSync(path.join(os.tmpdir(), "agent-extra-"));

@@ -11,7 +11,7 @@ export class WorkspaceError extends Error {
 export function resolveInWorkspace(workspace: string, target: string, extraRoots: string[] = []): string {
   const primary = path.resolve(workspace);
   const roots = [primary, ...extraRoots.map((root) => path.resolve(root))];
-  const candidate = path.resolve(primary, target);
+  const candidate = path.isAbsolute(target) ? path.resolve(target) : path.resolve(primary, target);
   for (const root of roots) {
     if (containedRel(root, candidate) !== undefined) return candidate;
   }

@@ -1,7 +1,7 @@
-#!/usr/bin/env node
 /**
  * Pack a Spring Boot executable JAR that launches the native agent CLI.
  * `java -jar agent-server.jar` serves /v1/prompt and /actuator/health.
+ * Run: node scripts/pack-server-jar.mjs
  */
 import { spawnSync } from "node:child_process";
 import { createWriteStream } from "node:fs";

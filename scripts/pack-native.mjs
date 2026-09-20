@@ -1,7 +1,7 @@
-#!/usr/bin/env node
 /**
  * Pack Node.js SEA binaries: Windows .exe, macOS and Linux executables.
  * Cross-builds by downloading the matching official Node dist for each target.
+ * Run: node scripts/pack-native.mjs
  */
 import { spawnSync } from "node:child_process";
 import { createWriteStream } from "node:fs";
@@ -63,22 +63,38 @@ async function download(url, dest) {
   });
 }
 
+function runPython(args) {
+  const commands = process.platform === "win32" ? ["python", "python3", "py"] : ["python3", "python"];
+  let last = { status: 1, stderr: "python not found", stdout: "" };
+  for (const command of commands) {
+    const argv = command === "py" ? ["-3", ...args] : args;
+    const result = spawnSync(command, argv, { encoding: "utf8", shell: process.platform === "win32" });
+    last = result;
+    if (result.status === 0) return result;
+  }
+  return last;
+}
+
 function extractArchive(archive, destDir) {
   fs.mkdirSync(destDir, { recursive: true });
-  if (archive.endsWith(".zip")) {
-    const py = spawnSync(
-      "python3",
-      ["-c", "import sys, zipfile; zipfile.ZipFile(sys.argv[1]).extractall(sys.argv[2])", archive, destDir],
-      { encoding: "utf8" },
-    );
-    if (py.status !== 0) {
-      const unzip = spawnSync("unzip", ["-q", archive, "-d", destDir], { encoding: "utf8" });
-      if (unzip.status !== 0) throw new Error(`unzip failed: ${py.stderr || unzip.stderr}`);
-    }
-    return;
-  }
   const tar = spawnSync("tar", ["-xf", archive, "-C", destDir], { encoding: "utf8" });
-  if (tar.status !== 0) throw new Error(`tar extract failed: ${tar.stderr}`);
+  if (tar.status === 0) return;
+  if (archive.endsWith(".zip")) {
+    const py = runPython(["-c", "import sys, zipfile; zipfile.ZipFile(sys.argv[1]).extractall(sys.argv[2])", archive, destDir]);
+    if (py.status === 0) return;
+    const unzip = spawnSync("unzip", ["-q", archive, "-d", destDir], { encoding: "utf8" });
+    if (unzip.status === 0) return;
+    if (process.platform === "win32") {
+      const ps = spawnSync(
+        "powershell",
+        ["-NoProfile", "-Command", "Expand-Archive", "-LiteralPath", archive, "-DestinationPath", destDir, "-Force"],
+        { encoding: "utf8" },
+      );
+      if (ps.status === 0) return;
+    }
+    throw new Error(`unzip failed: ${tar.stderr || py.stderr || unzip.stderr}`);
+  }
+  throw new Error(`tar extract failed: ${tar.stderr}`);
 }
 
 function findExtractedNode(dir, target) {
@@ -178,18 +194,21 @@ function makeTarGz(file, archive, innerName) {
 }
 
 function makeZip(file, archive, innerName) {
-  const py = spawnSync(
-    "python3",
-    [
-      "-c",
-      "import sys, zipfile; z=zipfile.ZipFile(sys.argv[1],'w',zipfile.ZIP_DEFLATED); z.write(sys.argv[2], sys.argv[3]); z.close()",
-      archive,
-      file,
-      innerName,
-    ],
-    { encoding: "utf8" },
-  );
-  if (py.status !== 0) throw new Error(`zip failed: ${py.stderr || py.stdout}`);
+  const py = runPython([
+    "-c",
+    "import sys, zipfile; z=zipfile.ZipFile(sys.argv[1],'w',zipfile.ZIP_DEFLATED); z.write(sys.argv[2], sys.argv[3]); z.close()",
+    archive,
+    file,
+    innerName,
+  ]);
+  if (py.status === 0) return;
+  const dir = path.dirname(file);
+  const staged = path.join(dir, innerName);
+  if (staged !== file) fs.copyFileSync(file, staged);
+  const tar = spawnSync("tar", ["-a", "-cf", archive, innerName], { cwd: dir, encoding: "utf8" });
+  if (staged !== file) fs.rmSync(staged, { force: true });
+  if (tar.status === 0) return;
+  throw new Error(`zip failed: ${py.stderr || py.stdout || tar.stderr}`);
 }
 
 export async function packNative(opts = {}) {

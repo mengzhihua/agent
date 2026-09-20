@@ -1,8 +1,9 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 import { describe, expect, it } from "vitest";
-import { injectAttachments, parseAtMentions } from "../src/context/attach.js";
+import { fileUriToLocalPath, injectAttachments, parseAtMentions } from "../src/context/attach.js";
 
 describe("prompt attachments", () => {
   it("parses @path mentions and line ranges, not emails", () => {
@@ -12,6 +13,11 @@ describe("prompt attachments", () => {
     ]);
     expect(parseAtMentions("email me at user@example.com")).toEqual([]);
     expect(parseAtMentions("hi @sam look at @pkg.json")).toEqual([{ path: "pkg.json" }]);
+    expect(fileUriToLocalPath("file:///tmp/note.txt")).toBe("/tmp/note.txt");
+    expect(fileUriToLocalPath("file:///C:/Users/me/note.txt").replaceAll("\\", "/")).toBe("C:/Users/me/note.txt");
+    expect(fileUriToLocalPath("file://C:/Users/me/note.txt").replaceAll("\\", "/")).toBe("C:/Users/me/note.txt");
+    expect(fileUriToLocalPath("file://C:\\Users\\me\\note.txt").replaceAll("\\", "/")).toBe("C:/Users/me/note.txt");
+    expect(fileUriToLocalPath("file://localhost/C:/Users/me/note.txt").replaceAll("\\", "/")).toBe("C:/Users/me/note.txt");
   });
 
   it("inlines workspace files and skips ignored or missing optional mentions", () => {
@@ -26,6 +32,18 @@ describe("prompt attachments", () => {
     expect(text).toContain("explain @keep.ts and ping @nobody");
     expect(text).not.toContain("SECRET_TOKEN");
     expect(injectAttachments("hi @nobody", { workspace: dir })).toBe("hi @nobody");
+  });
+
+  it("inlines file:// URIs that stay inside the workspace", () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "agent-attach-uri-"));
+    const note = path.join(dir, "note.txt");
+    fs.writeFileSync(note, "FROM_FILE_URI\n");
+    const text = injectAttachments("review", {
+      workspace: dir,
+      extraFiles: [`file://${note}`, pathToFileURL(note).href],
+    });
+    expect(text).toContain("FROM_FILE_URI");
+    expect(text).not.toContain("path escapes workspace");
   });
 
   it("attaches --file paths and ACP preloaded text, including missing explicit files", () => {

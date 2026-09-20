@@ -42,7 +42,10 @@ function waitForHealth(url: string, timeoutMs = 60_000): Promise<Record<string, 
 
 describe.skipIf(!hasJava || process.platform !== "linux")("spring boot jar", () => {
   it("packs java -jar agent-server.jar and serves health", async () => {
-    const tsc = spawnSync("npx", ["tsc"], { cwd: root, encoding: "utf8" });
+    const tsc = spawnSync(process.execPath, [path.join(root, "node_modules", "typescript", "bin", "tsc")], {
+      cwd: root,
+      encoding: "utf8",
+    });
     expect(tsc.status, tsc.stderr || tsc.stdout).toBe(0);
     const outDir = fs.mkdtempSync(path.join(os.tmpdir(), "agent-jar-"));
     const native = await packNative({ from: root, outDir, targets: [currentNativeTarget()] });
