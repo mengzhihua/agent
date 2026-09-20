@@ -15,7 +15,7 @@ export interface UserFileConfig {
 }
 
 const PROVIDERS = new Set(["openai", "anthropic", "scripted"]);
-const APPROVALS = new Set(["ask", "auto"]);
+const APPROVALS = new Set(["ask", "auto", "edits"]);
 const MODES = new Set(["default", "plan"]);
 const SANDBOX = new Set(["auto", "none"]);
 const BROWSER = new Set(["auto", "html", "chrome"]);

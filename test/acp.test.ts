@@ -6,6 +6,7 @@ import { describe, expect, it } from "vitest";
 import { loadConfig } from "../src/config.js";
 import { AgentHost } from "../src/host.js";
 import { autoApprover } from "../src/permissions/policy.js";
+import { PermissionMemory } from "../src/permissions/allow.js";
 import {
   ACP_PROTOCOL_VERSION,
   bindAcpApprover,
@@ -50,6 +51,7 @@ async function hostWith(
   });
   const host = await AgentHost.create(config, provider, new SessionStore(sessionDir), autoApprover(), {
     connectMcp: false,
+    permissions: PermissionMemory.empty(),
   });
   return host;
 }
@@ -251,6 +253,8 @@ describe("ACP-shaped protocol", () => {
 describe("permission outcome", () => {
   it("accepts Zed selected/cancelled shapes", () => {
     expect(parsePermissionOutcome({ outcome: { outcome: "selected", optionId: "allow-once" } })).toBe("allow");
+    expect(parsePermissionOutcome({ outcome: { outcome: "selected", optionId: "allow-session" } })).toBe("session");
+    expect(parsePermissionOutcome({ outcome: { outcome: "selected", optionId: "allow-always" } })).toBe("always");
     expect(parsePermissionOutcome({ outcome: { outcome: "cancelled" } })).toBe("deny");
     expect(parsePermissionOutcome({ outcome: { outcome: "selected", optionId: "reject-once" } })).toBe("deny");
   });
@@ -261,6 +265,15 @@ describe("bindAcpApprover", () => {
     const host = await hostWith(new ScriptedProvider([{ text: "x" }]));
     bindAcpApprover(host, "s1", async () => ({ outcome: { outcome: "selected", optionId: "allow-once" } }));
     expect(await host.approver({ tool: "shell", risk: "exec", arguments: {}, summary: "shell: ls" })).toBe("allow");
+    await host.close();
+  });
+
+  it("maps allow-always and allow-session", async () => {
+    const host = await hostWith(new ScriptedProvider([{ text: "x" }]));
+    bindAcpApprover(host, "s1", async () => ({ outcome: { outcome: "selected", optionId: "allow-always" } }));
+    expect(await host.approver({ tool: "shell", risk: "exec", arguments: {}, summary: "shell: ls" })).toBe("always");
+    bindAcpApprover(host, "s1", async () => ({ outcome: { outcome: "selected", optionId: "allow-session" } }));
+    expect(await host.approver({ tool: "shell", risk: "exec", arguments: {}, summary: "shell: ls" })).toBe("session");
     await host.close();
   });
 });
@@ -1473,6 +1486,7 @@ describe("ACP slash commands", () => {
     expect(parseSlashCommand("/cost")).toEqual({ name: "cost", rest: "" });
     expect(parseSlashCommand("/rewind")).toEqual({ name: "rewind", rest: "" });
     expect(parseSlashCommand("/compact")).toEqual({ name: "compact", rest: "" });
+    expect(parseSlashCommand("/edits")).toEqual({ name: "edits", rest: "" });
     expect(parseSlashCommand("/unknown foo")).toEqual({ rest: "/unknown foo" });
     expect(parseSlashCommand("not a command")).toEqual({ rest: "not a command" });
   });
@@ -1495,6 +1509,7 @@ describe("ACP slash commands", () => {
     expect(JSON.stringify(createdNotes)).toContain('"name":"cost"');
     expect(JSON.stringify(createdNotes)).toContain('"name":"rewind"');
     expect(JSON.stringify(createdNotes)).toContain('"name":"compact"');
+    expect(JSON.stringify(createdNotes)).toContain('"name":"edits"');
 
     const planNotes: unknown[] = [];
     const planned = await dispatch(
@@ -1627,6 +1642,59 @@ describe("ACP slash commands", () => {
     expect(methods).toEqual([]);
     await host.close();
   });
+
+  it("lets /edits auto-approve patches but still ask for shell", async () => {
+    const provider = new ScriptedProvider([
+      { toolCalls: [{ id: "c1", name: "apply_patch", arguments: { path: "a.ts", new_string: "x" } }] },
+      { toolCalls: [{ id: "c2", name: "shell", arguments: { command: "echo hi" } }] },
+      { text: "done" },
+    ]);
+    const host = await hostWith(provider, { approvalMode: "ask", sandbox: "none" });
+    const sessions = new Set<string>();
+    const controllers = new Map<string, AbortController>();
+    const created = (await dispatch(
+      host,
+      sessions,
+      controllers,
+      { jsonrpc: "2.0", id: 1, method: "session/new" },
+      () => undefined,
+    )) as { sessionId: string };
+
+    await dispatch(
+      host,
+      sessions,
+      controllers,
+      {
+        jsonrpc: "2.0",
+        id: 2,
+        method: "session/prompt",
+        params: { sessionId: created.sessionId, prompt: "/edits" },
+      },
+      () => undefined,
+    );
+    expect(host.config.approvalMode).toBe("edits");
+
+    const methods: string[] = [];
+    await dispatch(
+      host,
+      sessions,
+      controllers,
+      {
+        jsonrpc: "2.0",
+        id: 3,
+        method: "session/prompt",
+        params: { sessionId: created.sessionId, prompt: "edit then shell" },
+      },
+      () => undefined,
+      async (method, params) => {
+        methods.push(method);
+        expect(JSON.stringify(params)).toContain("echo hi");
+        return { outcome: { outcome: "selected", optionId: "allow-once" } };
+      },
+    );
+    expect(methods).toEqual(["session/request_permission"]);
+    await host.close();
+  });
 });
 
 describe("ACP session config options", () => {
@@ -1688,6 +1756,20 @@ describe("ACP session config options", () => {
       () => undefined,
     );
     expect(host.config.approvalMode).toBe("auto");
+
+    await dispatch(
+      host,
+      sessions,
+      controllers,
+      {
+        jsonrpc: "2.0",
+        id: 45,
+        method: "session/set_config_option",
+        params: { sessionId: created.sessionId, configId: "approval", value: "edits" },
+      },
+      () => undefined,
+    );
+    expect(host.config.approvalMode).toBe("edits");
 
     await expect(
       dispatch(

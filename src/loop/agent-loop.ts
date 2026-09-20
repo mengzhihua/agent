@@ -13,6 +13,7 @@ import type { AgentConfig, Approver, LoopEvent, Provider, ToolCall, ToolDiff, To
 import { assembleMessages } from "./assemble.js";
 import { compactNow } from "./compact.js";
 import { capToolOutput } from "../usage.js";
+import type { PermissionMemory } from "../permissions/allow.js";
 
 export interface RunTurnOptions {
   store: SessionStore;
@@ -28,6 +29,7 @@ export interface RunTurnOptions {
   runtime?: SessionRuntime;
   extraFiles?: string[];
   preloaded?: AttachOptions["preloaded"];
+  permissions?: PermissionMemory;
 }
 
 export async function* runTurn(options: RunTurnOptions): AsyncGenerator<LoopEvent> {
@@ -137,6 +139,7 @@ export async function* runTurn(options: RunTurnOptions): AsyncGenerator<LoopEven
             config.runMode,
             config.sandboxBackend,
             call.id,
+            options.permissions,
           );
           yield { type: "permission", tool: call.name, decision: permission.decision, summary: permission.summary };
 

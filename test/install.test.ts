@@ -137,6 +137,7 @@ describe("one-click setup", () => {
     expect(help.stdout).toContain("agent serve");
     expect(help.stdout).toContain("web console");
     expect(help.stdout).toContain("--file");
+    expect(help.stdout).toContain("--accept-edits");
   }, 60_000);
 
   it("ships unix and windows installers", () => {

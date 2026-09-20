@@ -13,7 +13,7 @@
 
 USD 是公开牌价粗算，不是账单。
 
-不做：OAuth、图片 prompt、Docker workspace / 云端 VM、Playwright、npm 公有源、Apple 公证。会话 continue / rewind / 手动 compact 见 [期 31](phase-31.md)。
+不做：OAuth、图片 prompt、Docker workspace / 云端 VM、Playwright、npm 公有源、Apple 公证。会话 continue / rewind / 手动 compact 见 [期 31](phase-31.md)。审批光谱见 [期 33](phase-33.md)。
 
 ## 怎么跑
 
