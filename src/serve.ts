@@ -34,11 +34,14 @@ export async function startAgentServer(opts: ServeOptions): Promise<StartedServe
   }
   const token = (opts.token ?? process.env.AGENT_SERVE_TOKEN ?? "").trim();
   const store = opts.store ?? new SessionStore(opts.config.sessionDir);
-  const host =
-    opts.agentHost ??
-    (await AgentHost.create(opts.config, createProvider(opts.config), store, autoApprover(), {
+  let host = opts.agentHost;
+  const getHost = async (): Promise<AgentHost> => {
+    if (host) return host;
+    host = await AgentHost.create(opts.config, createProvider(opts.config), store, autoApprover(), {
       connectMcp: opts.connectMcp,
-    }));
+    });
+    return host;
+  };
   let chain: Promise<unknown> = Promise.resolve();
   const serialize = <T>(fn: () => Promise<T>): Promise<T> => {
     const next = chain.then(fn, fn);
@@ -50,7 +53,7 @@ export async function startAgentServer(opts: ServeOptions): Promise<StartedServe
   };
 
   const server = createServer((req, res) => {
-    serialize(() => handleRequest(req, res, { host, store, token })).catch((err) => {
+    serialize(() => handleRequest(req, res, { getHost, store, token })).catch((err) => {
       if (!res.writableEnded) {
         sendJson(res, 500, { error: redactSecrets(err instanceof Error ? err.message : String(err)) });
       }
@@ -76,7 +79,7 @@ export async function startAgentServer(opts: ServeOptions): Promise<StartedServe
       await new Promise<void>((resolve, reject) => {
         server.close((err) => (err ? reject(err) : resolve()));
       });
-      await host.close();
+      await host?.close();
     },
   };
 }
@@ -84,7 +87,7 @@ export async function startAgentServer(opts: ServeOptions): Promise<StartedServe
 async function handleRequest(
   req: IncomingMessage,
   res: ServerResponse,
-  ctx: { host: AgentHost; store: SessionStore; token: string },
+  ctx: { getHost: () => Promise<AgentHost>; store: SessionStore; token: string },
 ): Promise<void> {
   const url = new URL(req.url || "/", "http://127.0.0.1");
   const method = (req.method || "GET").toUpperCase();
@@ -122,19 +125,20 @@ async function handleRequest(
       sendJson(res, 400, { error: "prompt is required" });
       return;
     }
+    const agent = await ctx.getHost();
     const workspace = typeof body.workspace === "string" ? body.workspace : undefined;
     const sessionId =
       typeof body.sessionId === "string" && body.sessionId.trim()
         ? body.sessionId.trim()
-        : ctx.host.createSession(workspace);
-    if (body.sessionId) ctx.host.resume(sessionId, workspace);
+        : agent.createSession(workspace);
+    if (body.sessionId) agent.resume(sessionId, workspace);
     const extraFiles = Array.isArray(body.files) ? body.files.map(String) : [];
     const controller = new AbortController();
     req.on("close", () => {
       if (!res.writableEnded) controller.abort();
     });
     const events = [];
-    for await (const event of ctx.host.prompt(
+    for await (const event of agent.prompt(
       sessionId,
       prompt,
       controller.signal,
@@ -165,7 +169,7 @@ async function handleRequest(
         sendJson(res, 404, { error: `session not found: ${id}` });
         return;
       }
-      await ctx.host.deleteSession(id);
+      await (await ctx.getHost()).deleteSession(id);
       sendJson(res, 200, JSON.parse(formatSessionDelete(id, "json")));
       return;
     }
@@ -173,7 +177,7 @@ async function handleRequest(
   if (method === "POST" && url.pathname === "/v1/sessions") {
     const body = await readJson(req);
     const workspace = typeof body.workspace === "string" ? body.workspace : undefined;
-    const id = ctx.host.createSession(workspace);
+    const id = (await ctx.getHost()).createSession(workspace);
     sendJson(res, 201, { id });
     return;
   }
