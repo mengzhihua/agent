@@ -55,11 +55,11 @@ describe("session store", () => {
     const child = store.read(forked.id);
     expect(child[0]).toMatchObject({ type: "session_meta", id: forked.id, forkedFrom: "s1" });
     expect(child.map((event) => event.type)).toEqual(["session_meta", "user", "assistant"]);
+    expect(assembleMessages(child).at(-1)).toMatchObject({ role: "assistant", content: "hi" });
     expect(store.read("s1")).toHaveLength(4);
     store.append(forked.id, { type: "user", id: "u3", timestamp: "2026-09-20T00:00:04.000Z", text: "branch" });
     expect(store.read("s1").some((event) => event.type === "user" && event.text === "branch")).toBe(false);
     expect(store.inspect(forked.id).forkedFrom).toBe("s1");
-    expect(assembleMessages(store.read(forked.id)).at(-1)).toMatchObject({ role: "assistant", content: "hi" });
     expect(() => store.fork("missing")).toThrow(/session not found/);
   });
 });
