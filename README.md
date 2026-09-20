@@ -2,7 +2,7 @@
 
 通用 agent 软件：一个极简的模型–工具循环，外面套 harness。
 
-当前进度：**期 22 — 会话子命令与 eval JSON**。
+当前进度：**期 23 — 把 @path / --file 和 ACP 附件内联进 prompt**。
 
 - [行业研究](docs/industry-agent-research.md) — Codex、Claude Code、Grok Build、Devin、Cursor、Gemini CLI、Manus、OpenHands 等怎么做，以及通用 harness 的收敛形态
 - [期 0](docs/phase-0.md)
@@ -28,6 +28,7 @@
 - [期 20](docs/phase-20.md)
 - [期 21](docs/phase-21.md)
 - [期 22](docs/phase-22.md)
+- [期 23](docs/phase-23.md)
 
 ## 研究结论（极简）
 
@@ -85,6 +86,8 @@ agent --plan          # 只读研究 + update_plan
 agent eval test/evals # 确定性回归（不调模型）
 agent eval test/evals --output-format json
 agent --browser chrome -y -p "Open a page and screenshot"
+agent -p --file src/cli.ts "what does this do"
+agent -p "fix @src/cli.ts:10-40"
 agent --list
 agent session list
 agent session show <id>

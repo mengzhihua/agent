@@ -1,4 +1,5 @@
 import { injectExplicitSkills, loadSkills, type SkillIndex } from "../context/skills.js";
+import { injectAttachments, type AttachOptions } from "../context/attach.js";
 import { HookRunner } from "../hooks/hooks.js";
 import { newId, nowIso } from "../ids.js";
 import { decidePermission, riskFor } from "../permissions/policy.js";
@@ -24,6 +25,8 @@ export interface RunTurnOptions {
   skills?: SkillIndex;
   hooks?: HookRunner;
   runtime?: SessionRuntime;
+  extraFiles?: string[];
+  preloaded?: AttachOptions["preloaded"];
 }
 
 export async function* runTurn(options: RunTurnOptions): AsyncGenerator<LoopEvent> {
@@ -31,7 +34,15 @@ export async function* runTurn(options: RunTurnOptions): AsyncGenerator<LoopEven
   const skills = options.skills ?? loadSkills(config.workspace);
   const hooks = options.hooks ?? HookRunner.load(config.workspace);
   const runtime = options.runtime ?? createSessionRuntime(sessionId, config);
-  const userText = injectExplicitSkills(options.userText, skills);
+  const userText = injectExplicitSkills(
+    injectAttachments(options.userText, {
+      workspace: config.workspace,
+      extraRoots: runtime.extraRoots,
+      extraFiles: options.extraFiles,
+      preloaded: options.preloaded,
+    }),
+    skills,
+  );
   store.append(sessionId, { type: "user", id: newId("evt"), timestamp: nowIso(), text: userText });
 
   try {

@@ -17,6 +17,7 @@ import { SessionStore } from "./session/store.js";
 import type { TaskArgs } from "./tools/extra.js";
 import { ToolRegistry } from "./tools/registry.js";
 import type { AgentConfig, Approver, LoopEvent, Provider, RunMode } from "./types.js";
+import type { AttachOptions } from "./context/attach.js";
 
 export class AgentHost {
   readonly skills: SkillIndex;
@@ -154,7 +155,12 @@ export class AgentHost {
     this.store.delete(sessionId);
   }
 
-  async *prompt(sessionId: string, userText: string, signal: AbortSignal): AsyncGenerator<LoopEvent> {
+  async *prompt(
+    sessionId: string,
+    userText: string,
+    signal: AbortSignal,
+    attach?: Pick<AttachOptions, "extraFiles" | "preloaded">,
+  ): AsyncGenerator<LoopEvent> {
     const runtime = this.runtimeFor(sessionId);
     yield* runTurn({
       store: this.store,
@@ -168,6 +174,8 @@ export class AgentHost {
       skills: this.skills,
       hooks: this.hooks,
       runtime,
+      extraFiles: attach?.extraFiles,
+      preloaded: attach?.preloaded,
     });
   }
 

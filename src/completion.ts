@@ -10,7 +10,7 @@ function bashCompletion(): string {
   return `# bash completion for agent
 _agent() {
   local cur="\${COMP_WORDS[COMP_CWORD]}"
-  local cmds="acp eval session doctor update uninstall completion config init login logout --help --version --print --quiet --output-format --yes --plan --workspace --resume --list --model --provider --sandbox --browser --no-mcp"
+  local cmds="acp eval session doctor update uninstall completion config init login logout --help --version --print --quiet --output-format --yes --plan --workspace --resume --list --file --model --provider --sandbox --browser --no-mcp"
   COMPREPLY=( $(compgen -W "$cmds" -- "$cur") )
 }
 complete -F _agent agent
@@ -43,6 +43,7 @@ _agent() {
     '--workspace'
     '--resume'
     '--list'
+    '--file'
     '--model'
     '--provider'
     '--sandbox'
@@ -61,7 +62,7 @@ function powershellCompletion(): string {
   $cmds = @(
     'acp','eval','session','doctor','update','uninstall','completion','config','init','login','logout',
     '--help','--version','--print','--quiet','--output-format','--yes','--plan','--workspace','--resume',
-    '--list','--model','--provider','--sandbox','--browser','--no-mcp'
+    '--list','--file','--model','--provider','--sandbox','--browser','--no-mcp'
   )
   $cmds | Where-Object { $_ -like "$wordToComplete*" } | ForEach-Object {
     [System.Management.Automation.CompletionResult]::new($_, $_, 'ParameterValue', $_)

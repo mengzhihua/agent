@@ -7,6 +7,7 @@ export { autoApprover, denyApprover } from "./permissions/policy.js";
 export { AgentHost } from "./host.js";
 export { loadSkills } from "./context/skills.js";
 export { loadAgentsMd } from "./context/agents-md.js";
+export { injectAttachments, parseAtMentions } from "./context/attach.js";
 export { initWorkspace } from "./init.js";
 export { loadIgnoreMatcher } from "./ignore.js";
 export { inspectGit } from "./git-context.js";
@@ -39,6 +40,8 @@ export {
   acpConfigOptions,
   contextWindowSize,
   acpUsageUpdate,
+  parseAcpPrompt,
+  promptText,
 } from "./protocol/acp.js";
 export { parseClientCapabilities, createAcpFileIo, hasClientFs } from "./protocol/fs.js";
 export {

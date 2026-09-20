@@ -13,6 +13,7 @@ import { createAcpFileIo, hasClientFs, parseClientCapabilities } from "./fs.js";
 import type { NotifyFn, RequestFn } from "./rpc.js";
 import { packageVersion } from "../version.js";
 import { clientTerminalEnabled, createAcpTerminal } from "./terminal.js";
+import { fileUriToLocalPath } from "../context/attach.js";
 
 interface RpcRequest {
   jsonrpc: "2.0";
@@ -336,7 +337,7 @@ export async function dispatch(
         protocolVersion: ACP_PROTOCOL_VERSION,
         agentCapabilities: {
           loadSession: true,
-          promptCapabilities: { image: false, audio: false, embeddedContext: false },
+          promptCapabilities: { image: false, audio: false, embeddedContext: true },
           mcpCapabilities: { http: true, sse: false },
           sessionCapabilities: { additionalDirectories: {}, resume: {}, close: {}, list: {}, delete: {} },
         },
@@ -421,14 +422,15 @@ export async function dispatch(
     case "session/prompt": {
       const sessionId = String(req.params?.sessionId ?? "");
       if (!sessions.has(sessionId)) throw new Error("unknown session");
-      const rawPrompt = promptText(req.params?.prompt);
+      const parsed = parseAcpPrompt(req.params?.prompt);
+      const rawPrompt = parsed.text;
       const slash = parseSlashCommand(rawPrompt);
       if (slash.name && applySlashCommand(host, sessionId, slash, notify) === "done") {
         notifyUsage(host, sessionId, notify);
         return { stopReason: "end_turn" };
       }
       const prompt = slash.name ? slash.rest : rawPrompt;
-      if (!prompt) {
+      if (!prompt && parsed.extraFiles.length === 0 && parsed.preloaded.length === 0) {
         notifyUsage(host, sessionId, notify);
         return { stopReason: "end_turn" };
       }
@@ -468,7 +470,10 @@ export async function dispatch(
         }
       }
       try {
-        for await (const event of host.prompt(sessionId, prompt, controller.signal)) {
+        for await (const event of host.prompt(sessionId, prompt, controller.signal, {
+          extraFiles: parsed.extraFiles,
+          preloaded: parsed.preloaded,
+        })) {
           if (event.type === "usage") continue;
           notify({ sessionId, update: toAcpUpdate(event) });
         }
@@ -702,18 +707,45 @@ function acpToolCallEnd(
 }
 
 export function promptText(prompt: unknown): string {
-  if (typeof prompt === "string") return prompt;
-  if (Array.isArray(prompt)) {
-    return prompt
-      .map((block) => {
-        if (block && typeof block === "object" && "text" in block) {
-          return String((block as { text: unknown }).text);
-        }
-        return "";
-      })
-      .join("");
+  return parseAcpPrompt(prompt).text;
+}
+
+export function parseAcpPrompt(prompt: unknown): {
+  text: string;
+  extraFiles: string[];
+  preloaded: Array<{ path: string; content: string }>;
+} {
+  if (typeof prompt === "string") {
+    return { text: prompt, extraFiles: [], preloaded: [] };
   }
-  return "";
+  if (!Array.isArray(prompt)) {
+    return { text: "", extraFiles: [], preloaded: [] };
+  }
+  const texts: string[] = [];
+  const extraFiles: string[] = [];
+  const preloaded: Array<{ path: string; content: string }> = [];
+  for (const block of prompt) {
+    if (!block || typeof block !== "object") continue;
+    const rec = block as Record<string, unknown>;
+    const type = rec.type;
+    if (type === "text" && rec.text != null) {
+      texts.push(String(rec.text));
+      continue;
+    }
+    if (type === "resource_link" && typeof rec.uri === "string") {
+      extraFiles.push(fileUriToLocalPath(rec.uri));
+      continue;
+    }
+    if (type === "resource") {
+      const resource = rec.resource && typeof rec.resource === "object" ? (rec.resource as Record<string, unknown>) : rec;
+      const uri = typeof resource.uri === "string" ? resource.uri : typeof rec.uri === "string" ? rec.uri : "";
+      const text = typeof resource.text === "string" ? resource.text : undefined;
+      const local = uri ? fileUriToLocalPath(uri) : "embedded";
+      if (text !== undefined) preloaded.push({ path: local, content: text });
+      else if (uri) extraFiles.push(local);
+    }
+  }
+  return { text: texts.join(""), extraFiles, preloaded };
 }
 
 export function toAcpReplayUpdate(event: SessionEvent): Record<string, unknown> | undefined {

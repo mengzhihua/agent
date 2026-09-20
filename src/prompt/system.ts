@@ -38,6 +38,7 @@ export function staticSystemPrompt(config: AgentConfig): string {
     "- Use update_plan to keep a visible step list for multi-step work.",
     "- Use the skill tool to load specialized instructions when a listed skill matches.",
     "- Use task to spawn an isolated subagent for exploration or a bounded subtask. It cannot spawn further subagents.",
+    "- User messages may include <attached_files> from @path, --file, or the editor. Treat those as the current contents.",
   ];
   if (config.runMode === "plan") {
     lines.push(

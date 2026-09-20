@@ -52,6 +52,7 @@ function usage(): string {
   -w, --workspace <dir>  Workspace root (default: cwd)
   --resume <id>          Continue a session
   --list                 List sessions (alias: agent session list)
+  --file <path>          Attach a workspace file to the prompt (repeatable)
   --model <name>         Model id
   --provider <name>      openai | anthropic
   --session-dir <dir>    Transcript directory
@@ -161,6 +162,7 @@ async function main(): Promise<void> {
       workspace: { type: "string", short: "w" },
       resume: { type: "string" },
       list: { type: "boolean", default: false },
+      file: { type: "string", multiple: true },
       model: { type: "string" },
       provider: { type: "string" },
       "session-dir": { type: "string" },
@@ -222,7 +224,7 @@ async function main(): Promise<void> {
       if (!prompt) throw new Error("prompt is required with --print");
       const controller = new AbortController();
       process.on("SIGINT", () => controller.abort());
-      const result = await renderTurn(host, sessionId, prompt, controller.signal, format, quiet);
+      const result = await renderTurn(host, sessionId, prompt, controller.signal, format, quiet, values.file);
       if (format === "text" && !quiet) stderr.write(`\nsession ${sessionId}\n`);
       if (result.isError || result.aborted) process.exitCode = 1;
       return;
@@ -418,10 +420,11 @@ async function renderTurn(
   signal: AbortSignal,
   format: OutputFormat = "text",
   quiet = false,
+  extraFiles: string[] = [],
 ): Promise<ReturnType<typeof collectJsonResult>> {
   const events: LoopEvent[] = [];
   let printed = false;
-  for await (const event of host.prompt(sessionId, prompt, signal)) {
+  for await (const event of host.prompt(sessionId, prompt, signal, extraFiles.length ? { extraFiles } : undefined)) {
     events.push(event);
     if (format === "stream-json") {
       output.write(`${encodeStreamLine(sessionId, event)}\n`);

@@ -13,7 +13,7 @@
 5. `agent eval <file-or-dir> --output-format json` 输出 `{ type: "eval", passed, failed, results }`；失败时退出码 1
 6. `--session-dir` 对 session 子命令生效
 
-不做：OAuth、SSE 传输、布尔 ACP config、累计 cost、图片 prompt、Docker workspace、云端 VM、Playwright、npm 公有源、单文件原生二进制。
+不做：OAuth、SSE 传输、布尔 ACP config、累计 cost、图片 prompt、Docker workspace、云端 VM、Playwright、npm 公有源、单文件原生二进制。Prompt 附件见 [期 23](phase-23.md)。
 
 ## 怎么跑
 
