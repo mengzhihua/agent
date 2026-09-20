@@ -1404,6 +1404,8 @@ describe("ACP session list / delete", () => {
     expect(host.store.read(created.sessionId).some((event) => event.type === "compact")).toBe(true);
     await host.close();
   });
+
+  it("deletes sessions from history, including missing ids", async () => {
     const host = await hostWith(new ScriptedProvider([{ text: "ok" }]));
     const sessions = new Set<string>();
     const controllers = new Map<string, AbortController>();
