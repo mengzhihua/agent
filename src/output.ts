@@ -74,13 +74,21 @@ export function formatSessionShow(session: SessionInspect, format: OutputFormat)
   if (format !== "text") return redactSecrets(JSON.stringify(session));
   const header = `session ${session.id}  ${session.timestamp}  ${session.model}  ${session.cwd}${
     session.title ? `  ${session.title}` : ""
-  }`;
+  }${session.forkedFrom ? `  fork of ${session.forkedFrom}` : ""}`;
   return `${header}\n\n${session.events.map(formatSessionEvent).join("\n\n")}`;
 }
 
 export function formatSessionDelete(sessionId: string, format: OutputFormat): string {
   if (format === "text") return `Deleted ${sessionId}`;
   return JSON.stringify({ id: sessionId, deleted: true });
+}
+
+export function formatSessionFork(
+  result: { id: string; forkedFrom: string },
+  format: OutputFormat,
+): string {
+  if (format === "text") return `Forked ${result.forkedFrom} -> ${result.id}`;
+  return JSON.stringify({ id: result.id, forkedFrom: result.forkedFrom });
 }
 
 export interface EvalJsonResult {
@@ -119,7 +127,9 @@ export function formatEvalResults(results: EvalResult[], format: OutputFormat): 
 function formatSessionEvent(event: SessionEvent): string {
   switch (event.type) {
     case "session_meta":
-      return `meta  ${event.timestamp}  ${event.provider}  ${event.model}`;
+      return `meta  ${event.timestamp}  ${event.provider}  ${event.model}${
+        event.forkedFrom ? `  fork of ${event.forkedFrom}` : ""
+      }`;
     case "user":
       return `user  ${event.timestamp}\n${event.text}`;
     case "assistant":

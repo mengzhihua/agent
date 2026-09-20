@@ -97,6 +97,16 @@ public class AgentApiController {
     return mapper.readTree(lastJsonLine(raw));
   }
 
+  @PostMapping("/v1/sessions/{id}/fork")
+  public ResponseEntity<JsonNode> fork(@PathVariable("id") String id) throws Exception {
+    try {
+      String raw = cli.run(List.of("session", "fork", id, "--output-format", "json"), 30);
+      return ResponseEntity.status(HttpStatus.CREATED).body(mapper.readTree(lastJsonLine(raw)));
+    } catch (Exception ex) {
+      throw new ResponseStatusException(HttpStatus.NOT_FOUND, ex.getMessage());
+    }
+  }
+
   @PostMapping("/v1/sessions")
   public ResponseEntity<ObjectNode> create() throws Exception {
     ObjectNode node = mapper.createObjectNode();

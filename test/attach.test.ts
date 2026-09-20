@@ -13,7 +13,7 @@ describe("prompt attachments", () => {
     ]);
     expect(parseAtMentions("email me at user@example.com")).toEqual([]);
     expect(parseAtMentions("hi @sam look at @pkg.json")).toEqual([{ path: "pkg.json" }]);
-    expect(fileUriToLocalPath("file:///tmp/note.txt")).toBe("/tmp/note.txt");
+    expect(fileUriToLocalPath("file:///tmp/note.txt").replaceAll("\\", "/")).toBe("/tmp/note.txt");
     expect(fileUriToLocalPath("file:///C:/Users/me/note.txt").replaceAll("\\", "/")).toBe("C:/Users/me/note.txt");
     expect(fileUriToLocalPath("file://C:/Users/me/note.txt").replaceAll("\\", "/")).toBe("C:/Users/me/note.txt");
     expect(fileUriToLocalPath("file://C:\\Users\\me\\note.txt").replaceAll("\\", "/")).toBe("C:/Users/me/note.txt");

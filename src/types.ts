@@ -130,6 +130,7 @@ export type SessionEvent =
       cwd: string;
       model: string;
       provider: string;
+      forkedFrom?: string;
     }
   | { type: "user"; id: string; timestamp: string; text: string }
   | { type: "assistant"; id: string; timestamp: string; text: string }

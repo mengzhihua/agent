@@ -68,6 +68,12 @@ describe("agent serve", () => {
     const body = (await prompted.json()) as { type: string; text: string; sessionId: string };
     expect(body).toMatchObject({ type: "result", text: "hello from serve" });
     expect(body.sessionId).toBeTruthy();
+    const forked = await fetch(`${server.url}/v1/sessions/${encodeURIComponent(body.sessionId)}/fork`, {
+      method: "POST",
+      headers: { authorization: "Bearer secret" },
+    });
+    expect(forked.status).toBe(201);
+    expect(await forked.json()).toMatchObject({ forkedFrom: body.sessionId });
     const streamed = await fetch(`${server.url}/v1/prompt`, {
       method: "POST",
       headers: { "content-type": "application/json", accept: "text/event-stream", "x-agent-token": "secret" },

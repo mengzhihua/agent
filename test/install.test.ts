@@ -82,6 +82,16 @@ describe("one-click setup", () => {
     );
     expect(exported.status, exported.stderr).toBe(0);
     expect(JSON.parse(exported.stdout)).toMatchObject({ id: "s1", title: "hello" });
+    const forked = spawnSync(
+      process.execPath,
+      [path.join(root, "dist/cli.js"), "session", "fork", "s1", "--output-format", "json", "--session-dir", sessionDir],
+      { encoding: "utf8" },
+    );
+    expect(forked.status, forked.stderr).toBe(0);
+    const forkBody = JSON.parse(forked.stdout) as { id: string; forkedFrom: string };
+    expect(forkBody).toMatchObject({ forkedFrom: "s1" });
+    expect(forkBody.id).not.toBe("s1");
+    expect(fs.existsSync(path.join(sessionDir, `${forkBody.id}.jsonl`))).toBe(true);
     const deleted = spawnSync(
       process.execPath,
       [path.join(root, "dist/cli.js"), "session", "delete", "s1", "--output-format", "json", "--session-dir", sessionDir],
@@ -101,6 +111,7 @@ describe("one-click setup", () => {
     expect(help.stdout).toContain("--output-format");
     expect(help.stdout).toContain("--quiet");
     expect(help.stdout).toContain("agent session list");
+    expect(help.stdout).toContain("agent session list|show|delete|export|fork");
     expect(help.stdout).toContain("agent memory");
     expect(help.stdout).toContain("agent serve");
     expect(help.stdout).toContain("web console");

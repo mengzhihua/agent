@@ -24,7 +24,7 @@ _agent() {
   cmds=(
     'acp:ACP JSON-RPC on stdio'
     'eval:Run deterministic eval fixtures'
-    'session:List, inspect, export, or delete sessions'
+    'session:List, inspect, export, fork, or delete sessions'
     'memory:Show durable user and project memory'
     'doctor:Show install and runtime diagnostics'
     'update:Re-run the one-click installer'

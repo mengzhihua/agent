@@ -33,6 +33,7 @@
     <input id="token" placeholder="Bearer token（可选）" />
     <input id="workspace" placeholder="workspace 路径（可选）" />
     <button class="ghost" id="new" type="button">新会话</button>
+    <button class="ghost" id="fork" type="button">分叉</button>
     <div id="sessions"></div>
     <button class="ghost" id="doctor" type="button">doctor</button>
   </aside>
@@ -106,6 +107,20 @@
       }
     }
     $("new").onclick = () => { state.sessionId = ""; $("log").innerHTML = ""; refreshSessions(); };
+    $("fork").onclick = async () => {
+      if (!state.sessionId) return;
+      try {
+        const body = await api("/v1/sessions/" + encodeURIComponent(state.sessionId) + "/fork", {
+          method: "POST",
+          headers: headers(),
+        });
+        state.sessionId = body.id;
+        line("forked  " + body.forkedFrom + " -> " + body.id, "tool");
+        refreshSessions();
+      } catch (err) {
+        line("error  " + err.message, "err");
+      }
+    };
     $("doctor").onclick = async () => {
       const body = await api("/v1/doctor", { headers: headers() });
       line(body.text || JSON.stringify(body, null, 2), "tool");

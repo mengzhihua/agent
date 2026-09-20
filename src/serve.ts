@@ -1,7 +1,7 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { AgentHost } from "./host.js";
 import { doctorReport } from "./doctor.js";
-import { collectJsonResult, encodeJsonResult, encodeStreamLine, formatSessionDelete, formatSessionList, formatSessionShow } from "./output.js";
+import { collectJsonResult, encodeJsonResult, encodeStreamLine, formatSessionDelete, formatSessionFork, formatSessionList, formatSessionShow } from "./output.js";
 import { loadConsoleHtml } from "./web/load.js";
 import { autoApprover } from "./permissions/policy.js";
 import { createProvider } from "./provider/factory.js";
@@ -135,7 +135,7 @@ async function handleRequest(
     sendJson(res, 200, {
       name: "agent",
       version: packageVersion(),
-      endpoints: ["/v1/health", "/v1/doctor", "/v1/prompt", "/v1/sessions", "/actuator/health", "/ui"],
+      endpoints: ["/v1/health", "/v1/doctor", "/v1/prompt", "/v1/sessions", "/v1/sessions/{id}/fork", "/actuator/health", "/ui"],
     });
     return;
   }
@@ -192,6 +192,19 @@ async function handleRequest(
   }
   if (method === "GET" && url.pathname === "/v1/sessions") {
     sendJson(res, 200, JSON.parse(formatSessionList(ctx.store.list(), "json")));
+    return;
+  }
+  const forkMatch = /^\/v1\/sessions\/([^/]+)\/fork$/.exec(url.pathname);
+  if (forkMatch && method === "POST") {
+    const id = decodeURIComponent(forkMatch[1]);
+    if (!ctx.store.exists(id)) {
+      sendJson(res, 404, { error: `session not found: ${id}` });
+      return;
+    }
+    const body = await readJson(req);
+    const untilEventId = typeof body.untilEventId === "string" ? body.untilEventId : undefined;
+    const forkedId = (await ctx.getHost()).forkSession(id, { untilEventId });
+    sendJson(res, 201, JSON.parse(formatSessionFork({ id: forkedId, forkedFrom: id }, "json")));
     return;
   }
   const sessionMatch = /^\/v1\/sessions\/([^/]+)$/.exec(url.pathname);

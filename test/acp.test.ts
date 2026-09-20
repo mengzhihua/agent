@@ -80,7 +80,7 @@ describe("ACP-shaped protocol", () => {
       agentCapabilities: {
         loadSession: true,
         promptCapabilities: { image: false, audio: false, embeddedContext: true },
-        sessionCapabilities: { additionalDirectories: {}, resume: {}, close: {}, list: {}, delete: {} },
+        sessionCapabilities: { additionalDirectories: {}, resume: {}, close: {}, list: {}, delete: {}, fork: {} },
       },
       agentInfo: { name: "agent", version: packageVersion() },
     });
@@ -1280,6 +1280,71 @@ describe("ACP session list / delete", () => {
     const rest = listAcpSessions(host, { cursor: paged.nextCursor }, 1);
     expect(rest.sessions).toHaveLength(1);
     expect(rest.nextCursor).toBeUndefined();
+    await host.close();
+  });
+
+  it("forks a live session into an independent transcript", async () => {
+    const host = await hostWith(new ScriptedProvider([{ text: "first" }, { text: "on fork" }]));
+    const sessions = new Set<string>();
+    const controllers = new Map<string, AbortController>();
+    const extra = fs.mkdtempSync(path.join(os.tmpdir(), "agent-acp-fork-extra-"));
+    const created = (await dispatch(
+      host,
+      sessions,
+      controllers,
+      { jsonrpc: "2.0", id: 1, method: "session/new", params: { additionalDirectories: [extra] } },
+      () => undefined,
+    )) as { sessionId: string };
+    await dispatch(
+      host,
+      sessions,
+      controllers,
+      {
+        jsonrpc: "2.0",
+        id: 2,
+        method: "session/prompt",
+        params: { sessionId: created.sessionId, prompt: "hello" },
+      },
+      () => undefined,
+    );
+    const forked = (await dispatch(
+      host,
+      sessions,
+      controllers,
+      { jsonrpc: "2.0", id: 3, method: "session/fork", params: { sessionId: created.sessionId } },
+      () => undefined,
+    )) as { sessionId: string; forkedFrom: string };
+    expect(forked.forkedFrom).toBe(created.sessionId);
+    expect(forked.sessionId).not.toBe(created.sessionId);
+    expect(sessions.has(forked.sessionId)).toBe(true);
+    expect(host.extraRootsFor(forked.sessionId)).toEqual([path.resolve(extra)]);
+    await dispatch(
+      host,
+      sessions,
+      controllers,
+      {
+        jsonrpc: "2.0",
+        id: 4,
+        method: "session/prompt",
+        params: { sessionId: forked.sessionId, prompt: "branch" },
+      },
+      () => undefined,
+    );
+    const parentUsers = host.store.read(created.sessionId).filter((event) => event.type === "user");
+    const childUsers = host.store.read(forked.sessionId).filter((event) => event.type === "user");
+    expect(parentUsers.map((event) => (event.type === "user" ? event.text : ""))).toEqual(["hello"]);
+    expect(childUsers.map((event) => (event.type === "user" ? event.text : ""))).toEqual(["hello", "branch"]);
+    const listed = (await dispatch(
+      host,
+      sessions,
+      controllers,
+      { jsonrpc: "2.0", id: 5, method: "session/list" },
+      () => undefined,
+    )) as { sessions: Array<Record<string, unknown>> };
+    expect(listed.sessions.find((row) => row.sessionId === forked.sessionId)).toMatchObject({
+      sessionId: forked.sessionId,
+      forkedFrom: created.sessionId,
+    });
     await host.close();
   });
 
