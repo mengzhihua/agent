@@ -1,7 +1,7 @@
 {
   "name": "agent",
   "private": true,
-  "version": "0.25.0",
+  "version": "0.26.0",
   "type": "module",
   "description": "General-purpose agent harness: one tool loop, local workspace, Chrome, sandbox, eval, ACP.",
   "bin": {
@@ -17,11 +17,16 @@
     "build": "tsc",
     "prepare": "tsc",
     "setup": "node scripts/setup.mjs --from .",
+    "pack:release": "node scripts/pack-release.mjs",
     "test": "vitest run",
     "test:watch": "vitest"
   },
   "engines": {
     "node": ">=22"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/mengzhihua/agent.git"
   },
   "devDependencies": {
     "@types/node": "^22.13.10",

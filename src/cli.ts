@@ -73,6 +73,7 @@ Keys: env vars override ~/.agent/credentials.json (agent login)
 
 Install (macOS/Linux): curl -fsSL https://raw.githubusercontent.com/mengzhihua/agent/main/scripts/install.sh | bash
 Install (Windows):     irm https://raw.githubusercontent.com/mengzhihua/agent/main/scripts/install.ps1 | iex
+Install uses the latest GitHub Release tarball (Node 22; npm not required). AGENT_REF=main installs from source.
 
 Project files: AGENTS.md, .agentignore, .agent/skills/*/SKILL.md, .agent/mcp.json, .agent/hooks.json, .agent/MEMORY.md
 Deliverables land in <workspace>/artifacts (or AGENT_ARTIFACTS).

@@ -106,8 +106,12 @@ describe("one-click setup", () => {
     expect(sh).toContain("curl");
     expect(sh).toContain("setup.mjs");
     expect(sh).toContain("PATH");
+    expect(sh).toContain("releases/latest/download/agent.tgz");
+    expect(sh).toContain("--skip-build");
     expect(ps).toContain("Invoke-WebRequest");
     expect(ps).toContain("setup.mjs");
     expect(ps).toContain("PATH");
+    expect(ps).toContain("releases/latest/download/agent.tgz");
+    expect(ps).toContain("--skip-build");
   });
 });
