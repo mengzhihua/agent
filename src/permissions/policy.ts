@@ -1,4 +1,13 @@
-import type { ApprovalMode, ApprovalRequest, Approver, Risk, RunMode, SandboxBackend } from "../types.js";
+import type {
+  ApprovalDecision,
+  ApprovalMode,
+  ApprovalRequest,
+  Approver,
+  Risk,
+  RunMode,
+  SandboxBackend,
+} from "../types.js";
+import { PermissionMemory, ruleForCall } from "./allow.js";
 
 export const TOOL_RISK: Record<string, Risk> = {
   read: "read",
@@ -48,6 +57,13 @@ export function isMutatingTool(tool: string, args?: unknown): boolean {
 
 const CONFINED_AUTO = new Set(["apply_patch", "shell", "artifact"]);
 
+export function parseApprovalMode(raw: string | undefined): ApprovalMode | undefined {
+  const value = raw?.trim();
+  if (value === "ask" || value === "auto" || value === "edits") return value;
+  if (value === "acceptEdits" || value === "accept-edits") return "edits";
+  return undefined;
+}
+
 export function defaultDecision(
   tool: string,
   mode: ApprovalMode,
@@ -56,6 +72,7 @@ export function defaultDecision(
 ): "allow" | "ask" {
   if (mode === "auto") return "allow";
   if (riskFor(tool, args) === "read") return "allow";
+  if (mode === "edits" && riskFor(tool, args) === "write") return "allow";
   if (sandbox !== "none" && CONFINED_AUTO.has(tool)) return "allow";
   return "ask";
 }
@@ -98,14 +115,26 @@ export async function decidePermission(
   runMode: RunMode = "default",
   sandbox: SandboxBackend = "none",
   callId?: string,
+  memory?: PermissionMemory,
 ): Promise<{ decision: "allow" | "deny"; summary: string }> {
   const summary = summarizeArgs(tool, args);
   if (runMode === "plan" && isMutatingTool(tool, args)) {
     return { decision: "deny", summary: `plan mode blocked ${summary}` };
   }
+  if (memory?.allows(tool, args)) return { decision: "allow", summary };
   if (defaultDecision(tool, mode, args, sandbox) === "allow") return { decision: "allow", summary };
-  return {
-    decision: await approver({ tool, risk: riskFor(tool, args), arguments: args, summary, callId } satisfies ApprovalRequest),
-    summary,
-  };
+  const answer = await approver({ tool, risk: riskFor(tool, args), arguments: args, summary, callId } satisfies ApprovalRequest);
+  if (answer === "always" || answer === "session") {
+    memory?.remember(ruleForCall(tool, args), answer === "always");
+    return { decision: "allow", summary };
+  }
+  return { decision: answer, summary };
+}
+
+export function parseApprovalAnswer(raw: string): ApprovalDecision {
+  const value = raw.trim().toLowerCase();
+  if (value === "y" || value === "yes") return "allow";
+  if (value === "a" || value === "always") return "always";
+  if (value === "s" || value === "session") return "session";
+  return "deny";
 }

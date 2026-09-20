@@ -1,6 +1,8 @@
 export type Risk = "read" | "write" | "exec" | "network";
 
-export type ApprovalMode = "ask" | "auto";
+export type ApprovalMode = "ask" | "edits" | "auto";
+
+export type ApprovalDecision = "allow" | "deny" | "always" | "session";
 
 export type ProviderName = "openai" | "anthropic" | "scripted";
 
@@ -121,7 +123,7 @@ export type ApprovalRequest = {
   callId?: string;
 };
 
-export type Approver = (request: ApprovalRequest) => Promise<"allow" | "deny">;
+export type Approver = (request: ApprovalRequest) => Promise<ApprovalDecision>;
 
 export type SessionEvent =
   | {

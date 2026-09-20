@@ -8,7 +8,7 @@ import { completionScript } from "./completion.js";
 import { configReport, doctorReport } from "./doctor.js";
 import { runEvalTarget } from "./eval/run.js";
 import { AgentHost } from "./host.js";
-import { autoApprover, denyApprover } from "./permissions/policy.js";
+import { autoApprover, denyApprover, parseApprovalAnswer } from "./permissions/policy.js";
 import { createProvider } from "./provider/factory.js";
 import { runAcpStdio } from "./protocol/acp.js";
 import type { AskUserFn } from "./runtime.js";
@@ -58,6 +58,7 @@ function usage(): string {
   -q, --quiet            Hide session/tool progress on stderr
   --output-format <fmt>  text (default) | json | stream-json
   -y, --yes              Auto-approve write/shell/network tools
+  --accept-edits         Auto-approve file edits; still ask for shell and network
   --plan                 Start in plan mode (read-only + update_plan)
   -w, --workspace <dir>  Workspace root (default: cwd)
   -c, --continue         Resume the latest session in this workspace
@@ -74,7 +75,7 @@ function usage(): string {
   -h, --help             Show help
 
 Environment: OPENAI_API_KEY, OPENAI_BASE_URL, XAI_API_KEY, ANTHROPIC_API_KEY,
-AGENT_MODEL, AGENT_HOME, AGENT_APPROVAL=ask|auto, AGENT_MODE=default|plan,
+AGENT_MODEL, AGENT_HOME, AGENT_APPROVAL=ask|edits|auto, AGENT_MODE=default|plan,
 AGENT_ARTIFACTS, AGENT_SANDBOX=auto|none, AGENT_BROWSER=auto|chrome|html, AGENT_CHROME,
 AGENT_OUTPUT_FORMAT=text|json|stream-json, AGENT_QUIET=1
 User file: ~/.agent/config.json (CLI and env override the file)
@@ -180,6 +181,7 @@ async function main(): Promise<void> {
       quiet: { type: "boolean", short: "q", default: false },
       "output-format": { type: "string" },
       yes: { type: "boolean", short: "y", default: false },
+      "accept-edits": { type: "boolean", default: false },
       plan: { type: "boolean", default: false },
       workspace: { type: "string", short: "w" },
       continue: { type: "boolean", short: "c", default: false },
@@ -211,7 +213,7 @@ async function main(): Promise<void> {
     workspace: values.workspace,
     model: values.model,
     provider: values.provider as ProviderName | undefined,
-    approvalMode: values.yes ? "auto" : undefined,
+    approvalMode: values.yes ? "auto" : values["accept-edits"] ? "edits" : undefined,
     runMode: values.plan ? "plan" : undefined,
     sessionDir: values["session-dir"],
     sandbox: values.sandbox as SandboxMode | undefined,
@@ -478,7 +480,7 @@ async function interactive(host: AgentHost, sessionId: string): Promise<void> {
       if (!line) continue;
       if (line === "/quit" || line === "/exit") break;
       if (line === "/help") {
-        console.log("/quit  /yes  /ask  /plan  /execute  /skills  /session  /fork  /rewind  /compact  /memory  /cost");
+        console.log("/quit  /yes  /edits  /ask  /plan  /execute  /skills  /session  /fork  /rewind  /compact  /memory  /cost");
         continue;
       }
       if (line === "/session") {
@@ -536,6 +538,11 @@ async function interactive(host: AgentHost, sessionId: string): Promise<void> {
         console.log("approval: auto");
         continue;
       }
+      if (line === "/edits") {
+        host.config = { ...host.config, approvalMode: "edits" };
+        console.log("approval: edits");
+        continue;
+      }
       if (line === "/ask") {
         host.config = { ...host.config, approvalMode: "ask" };
         console.log("approval: ask");
@@ -565,8 +572,8 @@ function makeStdinApprover(): Approver {
     }
     const rl = createInterface({ input, output: stderr });
     try {
-      const answer = (await rl.question(`Allow ${request.summary}? [y/N] `)).trim().toLowerCase();
-      return answer === "y" || answer === "yes" ? "allow" : "deny";
+      const answer = await rl.question(`Allow ${request.summary}? [y/N/always/session] `);
+      return parseApprovalAnswer(answer);
     } finally {
       rl.close();
     }
@@ -575,8 +582,8 @@ function makeStdinApprover(): Approver {
 
 function makeReadlineApprover(rl: ReturnType<typeof createInterface>): Approver {
   return async (request) => {
-    const answer = (await rl.question(`Allow ${request.summary}? [y/N] `)).trim().toLowerCase();
-    return answer === "y" || answer === "yes" ? "allow" : "deny";
+    const answer = await rl.question(`Allow ${request.summary}? [y/N/always/session] `);
+    return parseApprovalAnswer(answer);
   };
 }
 

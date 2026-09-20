@@ -8,6 +8,7 @@ import { newSessionId, nowIso } from "./ids.js";
 import { runTurn } from "./loop/agent-loop.js";
 import { compactNow } from "./loop/compact.js";
 import { McpManager } from "./mcp/manager.js";
+import { PermissionMemory } from "./permissions/allow.js";
 import { autoApprover } from "./permissions/policy.js";
 import type { ClientElicitationCaps } from "./protocol/elicitation.js";
 import type { ClientFsCaps } from "./protocol/fs.js";
@@ -28,6 +29,7 @@ export class AgentHost {
   clientFs: ClientFsCaps = { readTextFile: false, writeTextFile: false };
   clientTerminal = false;
   clientElicitation: ClientElicitationCaps = { form: false, url: false };
+  public permissions: PermissionMemory;
   private readonly artifacts: ArtifactStore;
   private readonly runtimes = new Map<string, SessionRuntime>();
 
@@ -41,12 +43,14 @@ export class AgentHost {
     tools: ToolRegistry,
     private readonly mcp: McpManager,
     askUser?: AskUserFn,
+    permissions?: PermissionMemory,
   ) {
     this.skills = skills;
     this.hooks = hooks;
     this.tools = tools;
     this.artifacts = new ArtifactStore(config.artifactsDir, config.workspace);
     this.askUser = askUser;
+    this.permissions = permissions ?? PermissionMemory.load();
   }
 
   static async create(
@@ -54,7 +58,7 @@ export class AgentHost {
     provider: Provider,
     store: SessionStore,
     approver: Approver,
-    opts: { connectMcp?: boolean; askUser?: AskUserFn } = {},
+    opts: { connectMcp?: boolean; askUser?: AskUserFn; permissions?: PermissionMemory } = {},
   ): Promise<AgentHost> {
     const skills = loadSkills(config.workspace);
     const hooks = HookRunner.load(config.workspace);
@@ -69,7 +73,18 @@ export class AgentHost {
         return hostRef.host.runSubagent(input, signal);
       },
     });
-    const host = new AgentHost(config, provider, store, approver, skills, hooks, tools, mcp, opts.askUser);
+    const host = new AgentHost(
+      config,
+      provider,
+      store,
+      approver,
+      skills,
+      hooks,
+      tools,
+      mcp,
+      opts.askUser,
+      opts.permissions,
+    );
     hostRef.host = host;
     return host;
   }
@@ -210,6 +225,7 @@ export class AgentHost {
       runtime,
       extraFiles: attach?.extraFiles,
       preloaded: attach?.preloaded,
+      permissions: this.permissions,
     });
   }
 
@@ -264,11 +280,12 @@ export class AgentHost {
       provider: this.provider,
       tools,
       config: childConfig,
-      approver: this.config.approvalMode === "ask" ? this.approver : autoApprover(),
+      approver: this.config.approvalMode === "auto" ? autoApprover() : this.approver,
       signal,
       skills: this.skills,
       hooks: this.hooks,
       runtime: this.runtimeFor(childId),
+      permissions: this.permissions,
     })) {
       if (event.type === "turn-end") summary = event.text;
       if (event.type === "error") summary = event.message;

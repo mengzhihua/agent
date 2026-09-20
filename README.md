@@ -2,7 +2,7 @@
 
 通用 agent 软件：一个极简的模型–工具循环，外面套 harness。
 
-当前进度：**期 31 — 接着上次会话 / 回退 / 手动 compact**。
+当前进度：**期 33 — 审批光谱：改文件自动放行，shell/网络仍问；可记住允许**。
 
 - [行业研究](docs/industry-agent-research.md) — Codex、Claude Code、Grok Build、Devin、Cursor、Gemini CLI、Manus、OpenHands 等怎么做，以及通用 harness 的收敛形态
 - [期 0](docs/phase-0.md)
@@ -38,6 +38,7 @@
 - [期 30](docs/phase-30.md)
 - [期 31](docs/phase-31.md)
 - [期 32](docs/phase-32.md)
+- [期 33](docs/phase-33.md)
 
 ## 研究结论（极简）
 
@@ -93,7 +94,7 @@ docker build -t agent . && docker run --rm -p 8080:8080 -e OPENAI_API_KEY agent
 
 装好后执行 `agent doctor`。新开一个终端即可直接运行 `agent`。之后可用 `agent update` / `agent uninstall`。
 
-指定版本：`AGENT_REF=v0.33.0`。要从源码装 main：`AGENT_REF=main`（此时需要 Node 22）。
+指定版本：`AGENT_REF=v0.34.0`。要从源码装 main：`AGENT_REF=main`（此时需要 Node 22）。
 
 合入 `main` 且 CI（Linux / macOS / Windows）全绿后，GitHub Actions 会打 `v*` Release（原生包 + tarball + `agent-server.jar`）。
 
@@ -124,6 +125,7 @@ agent -p "prompt"     # 单次
 agent -p --output-format json "prompt"
 agent -q -p --output-format stream-json "prompt"
 agent -y -p "prompt"  # 写/shell/联网自动放行
+agent --accept-edits -p "prompt"  # 改文件自动放行，shell/网络仍问
 agent --plan          # 只读研究 + update_plan
 agent eval test/evals # 确定性回归（不调模型）
 agent eval test/evals --output-format json
@@ -152,12 +154,12 @@ agent logout          # 删除保存的 key
 agent update          # 重跑一键安装
 agent uninstall       # 移除 shim 和 PATH
 agent completion bash # 输出 bash 补全
-agent                 # 交互（/plan /execute /skills /memory /fork /rewind /compact /cost；ask_user 走终端，ACP 走 elicitation）
+agent                 # 交互（/plan /execute /skills /memory /fork /rewind /compact /cost /yes /edits /ask；ask_user 走终端，ACP 走 elicitation）
 ```
 
 仓库内开发也可以：`npm run agent -- -y -p "..."`（走编译后的 `dist/cli.js`）。
 
-无 TTY 且未加 `-y` 时，写操作和 shell 会被拒绝。工作区不必是 git 仓库；交付物默认写到 `artifacts/`。Linux 上安装 `bubblewrap` 后，shell 默认无网络、只能写 workspace（`AGENT_SANDBOX=none` 可关）；macOS / Windows 默认不套 bwrap。找到本机 Chrome 或 Edge 时，`browser` 走 CDP（`AGENT_BROWSER=html` 可退回静态 fetch）。
+无 TTY 且未加 `-y` / `--accept-edits` 时，写操作和 shell 会被拒绝。权限提示可回 `y`（一次）、`session`（本会话）、`always`（写入 `~/.agent/permissions.json`）。工作区不必是 git 仓库；交付物默认写到 `artifacts/`。Linux 上安装 `bubblewrap` 后，shell 默认无网络、只能写 workspace（`AGENT_SANDBOX=none` 可关）；macOS / Windows 默认不套 bwrap。找到本机 Chrome 或 Edge 时，`browser` 走 CDP（`AGENT_BROWSER=html` 可退回静态 fetch）。
 
 ## 工具
 
@@ -180,5 +182,6 @@ MCP 工具以 `mcp__<server>__<tool>` 接在后面。
 
 会话存在 `$AGENT_HOME/sessions`（默认 `~/.agent/sessions`）。
 默认配置 `$AGENT_HOME/config.json`。
+记住的权限 `$AGENT_HOME/permissions.json`（提示时选 `always`）。
 API key `$AGENT_HOME/credentials.json`（`agent login`，权限 0600）。
 交付物存在 `$AGENT_ARTIFACTS` 或 `<workspace>/artifacts`。

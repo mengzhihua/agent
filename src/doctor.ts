@@ -9,6 +9,7 @@ import { authReport } from "./credentials.js";
 import { inspectGit } from "./git-context.js";
 import { detectSandboxBackend } from "./sandbox/plan.js";
 import { userConfigPath } from "./user-config.js";
+import { PermissionMemory } from "./permissions/allow.js";
 import { runningAsSea } from "./sea.js";
 import { packageRoot, packageVersion } from "./version.js";
 
@@ -34,22 +35,29 @@ export function doctorReport(): string {
     `ripgrep ${whichProgram("rg") ?? "fallback walker"}`,
     `provider ${config.provider} / ${config.model}`,
     `auth ${authReport()}`,
-    `approval ${config.approvalMode}  mode ${config.runMode}`,
+    `approval ${config.approvalMode}  mode ${config.runMode}${allowSuffix()}`,
   ];
   return lines.join("\n");
 }
 
 export function configReport(): string {
   const config = loadConfig({ workspace: process.cwd() });
+  const allows = PermissionMemory.load().persisted.length;
   return [
     `config ${userConfigPath()}`,
     `model ${config.model}`,
     `provider ${config.provider}`,
     `approval ${config.approvalMode}`,
+    `allows ${allows} persisted`,
     `mode ${config.runMode}`,
     `sandbox ${config.sandbox}`,
     `browser ${config.browser}`,
     `workspace ${config.workspace}`,
     `toolOutputLimit ${config.toolOutputLimit}`,
   ].join("\n");
+}
+
+function allowSuffix(): string {
+  const count = PermissionMemory.load().persisted.length;
+  return count ? `  allows ${count}` : "";
 }

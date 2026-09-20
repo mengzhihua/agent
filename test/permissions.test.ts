@@ -1,5 +1,9 @@
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { autoApprover, decidePermission, defaultDecision, denyApprover } from "../src/permissions/policy.js";
+import { autoApprover, decidePermission, defaultDecision, denyApprover, parseApprovalAnswer, parseApprovalMode } from "../src/permissions/policy.js";
+import { PermissionMemory, matchesRule, parseAllowRules, ruleForCall } from "../src/permissions/allow.js";
 
 describe("permissions", () => {
   it("allows reads without asking", () => {
@@ -86,5 +90,82 @@ describe("permissions", () => {
       "plan",
     );
     expect(artifactSave.decision).toBe("deny");
+  });
+
+  it("auto-approves writes in edits mode but still asks for shell and network", () => {
+    expect(defaultDecision("apply_patch", "edits", { path: "a.ts" })).toBe("allow");
+    expect(defaultDecision("artifact", "edits", { action: "save", content: "x" })).toBe("allow");
+    expect(defaultDecision("memory", "edits", { action: "append", text: "x" })).toBe("allow");
+    expect(defaultDecision("web_fetch", "edits", { url: "http://127.0.0.1/", save: true })).toBe("allow");
+    expect(defaultDecision("shell", "edits", { command: "ls" })).toBe("ask");
+    expect(defaultDecision("web_search", "edits", { query: "x" })).toBe("ask");
+    expect(defaultDecision("browser", "edits", { action: "click", ref: "e1" })).toBe("ask");
+  });
+
+  it("parses approval modes and prompt answers", () => {
+    expect(parseApprovalMode("edits")).toBe("edits");
+    expect(parseApprovalMode("accept-edits")).toBe("edits");
+    expect(parseApprovalMode("acceptEdits")).toBe("edits");
+    expect(parseApprovalMode("nope")).toBeUndefined();
+    expect(parseApprovalAnswer("y")).toBe("allow");
+    expect(parseApprovalAnswer("always")).toBe("always");
+    expect(parseApprovalAnswer("s")).toBe("session");
+    expect(parseApprovalAnswer("n")).toBe("deny");
+  });
+
+  it("remembers session and persisted shell prefixes", async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "agent-allow-"));
+    const file = path.join(dir, "permissions.json");
+    const memory = PermissionMemory.empty(file);
+    const session = await decidePermission(
+      "shell",
+      { command: "npm test" },
+      "ask",
+      async () => "session",
+      "default",
+      "none",
+      undefined,
+      memory,
+    );
+    expect(session.decision).toBe("allow");
+    const again = await decidePermission(
+      "shell",
+      { command: "npm test --watch" },
+      "ask",
+      denyApprover(),
+      "default",
+      "none",
+      undefined,
+      memory,
+    );
+    expect(again.decision).toBe("allow");
+    const other = await decidePermission(
+      "shell",
+      { command: "rm -rf /" },
+      "ask",
+      denyApprover(),
+      "default",
+      "none",
+      undefined,
+      memory,
+    );
+    expect(other.decision).toBe("deny");
+
+    const persist = PermissionMemory.empty(file);
+    await decidePermission(
+      "apply_patch",
+      { path: "a.ts" },
+      "ask",
+      async () => "always",
+      "default",
+      "none",
+      undefined,
+      persist,
+    );
+    const reloaded = PermissionMemory.load(dir);
+    expect(reloaded.allows("apply_patch", { path: "b.ts" })).toBe(true);
+    expect(parseAllowRules([{ tool: "shell", command: "npm test" }])).toEqual([{ tool: "shell", command: "npm test" }]);
+    expect(matchesRule({ tool: "shell", command: "npm test" }, "shell", { command: "npm test --ci" })).toBe(true);
+    expect(ruleForCall("shell", { command: " npm test " })).toEqual({ tool: "shell", command: "npm test" });
   });
 });

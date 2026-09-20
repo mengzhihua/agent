@@ -2,10 +2,10 @@ import path from "node:path";
 import { stdin, stdout, stderr } from "node:process";
 import type { AgentHost } from "../host.js";
 import { assembleMessages } from "../loop/assemble.js";
-import { autoApprover } from "../permissions/policy.js";
+import { autoApprover, parseApprovalMode } from "../permissions/policy.js";
 import { sessionTitle, type SessionListRow } from "../session/store.js";
 import { formatMemoryShow, loadMemory } from "../context/memory.js";
-import type { AgentConfig, ApprovalMode, ApprovalRequest, LoopEvent, Risk, RunMode, SessionEvent, ToolDiff, ToolLocation } from "../types.js";
+import type { AgentConfig, ApprovalDecision, ApprovalRequest, LoopEvent, Risk, RunMode, SessionEvent, ToolDiff, ToolLocation } from "../types.js";
 import { locationsFromToolArgs } from "../tools/types.js";
 import { estimateTokens } from "../workspace.js";
 import { formatUsageLine, sessionUsage } from "../usage.js";
@@ -43,6 +43,7 @@ export const AVAILABLE_COMMANDS = [
   { name: "compact", description: "Summarize the transcript to free context window." },
   { name: "cost", description: "Show billed token usage for this session." },
   { name: "yes", description: "Auto-approve write, shell, and network tools." },
+  { name: "edits", description: "Auto-approve file edits; still ask for shell and network." },
   { name: "ask", description: "Ask before write, shell, or network tools." },
 ] as const;
 
@@ -109,6 +110,7 @@ export function acpConfigOptions(host: AgentHost): Record<string, unknown>[] {
       currentValue: host.config.approvalMode,
       options: [
         { value: "ask", name: "Ask", description: "Ask before write, shell, or network tools." },
+        { value: "edits", name: "Edits", description: "Auto-approve file edits; still ask for shell and network." },
         { value: "auto", name: "Auto", description: "Auto-approve write, shell, and network tools." },
       ],
     },
@@ -121,9 +123,9 @@ export function applyConfigOption(host: AgentHost, configId: string, value: unkn
     return true;
   }
   if (configId === "approval") {
-    const mode = String(value);
-    if (mode !== "ask" && mode !== "auto") throw new Error("invalid approval value");
-    host.setApprovalMode(mode as ApprovalMode);
+    const mode = parseApprovalMode(String(value));
+    if (!mode) throw new Error("invalid approval value");
+    host.setApprovalMode(mode);
     return false;
   }
   if (configId === "model") {
@@ -186,7 +188,7 @@ export function permissionKind(risk: Risk): string {
   return "read";
 }
 
-export function parsePermissionOutcome(raw: unknown): "allow" | "deny" {
+export function parsePermissionOutcome(raw: unknown): ApprovalDecision {
   if (!raw || typeof raw !== "object") return "deny";
   const root = raw as Record<string, unknown>;
   const outcome = root.outcome ?? raw;
@@ -197,11 +199,19 @@ export function parsePermissionOutcome(raw: unknown): "allow" | "deny" {
     const tag = String(tagged.outcome ?? tagged.type ?? "");
     if (tag === "cancelled" || tag === "rejected") return "deny";
     const optionId = String(tagged.optionId ?? tagged.option_id ?? "");
-    if (tag === "selected" && optionId.startsWith("allow")) return "allow";
-    if (optionId.startsWith("allow")) return "allow";
-    if (optionId.startsWith("reject") || optionId.startsWith("deny")) return "deny";
+    if (tag === "selected") return decisionFromOptionId(optionId);
+    if (optionId) return decisionFromOptionId(optionId);
   }
-  if (typeof root.optionId === "string" && root.optionId.startsWith("allow")) return "allow";
+  if (typeof root.optionId === "string") return decisionFromOptionId(root.optionId);
+  return "deny";
+}
+
+function decisionFromOptionId(optionId: string): ApprovalDecision {
+  const id = optionId.toLowerCase();
+  if (id.includes("reject") || id.includes("deny")) return "deny";
+  if (id.includes("always") || id === "allow_always") return "always";
+  if (id.includes("session")) return "session";
+  if (id.startsWith("allow")) return "allow";
   return "deny";
 }
 
@@ -218,6 +228,8 @@ export function bindAcpApprover(host: AgentHost, sessionId: string, request: Req
       },
       options: [
         { optionId: "allow-once", name: "Allow", kind: "allow_once" },
+        { optionId: "allow-session", name: "Allow for session", kind: "allow_always" },
+        { optionId: "allow-always", name: "Always allow", kind: "allow_always" },
         { optionId: "reject-once", name: "Reject", kind: "reject_once" },
       ],
     });
@@ -608,6 +620,10 @@ export function applySlashCommand(
       return slash.rest ? "continue" : "done";
     case "yes":
       host.setApprovalMode("auto");
+      notifyConfigOptions(host, sessionId, notify);
+      return slash.rest ? "continue" : "done";
+    case "edits":
+      host.setApprovalMode("edits");
       notifyConfigOptions(host, sessionId, notify);
       return slash.rest ? "continue" : "done";
     case "ask":

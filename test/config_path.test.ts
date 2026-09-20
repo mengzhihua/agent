@@ -24,13 +24,13 @@ describe("user config", () => {
     expect(
       parseUserConfig({
         model: "grok-4",
-        approvalMode: "auto",
+        approvalMode: "edits",
         sandbox: "none",
         browser: "html",
         provider: "nope",
         toolOutputLimit: 12_000,
       }),
-    ).toEqual({ model: "grok-4", approvalMode: "auto", sandbox: "none", browser: "html", toolOutputLimit: 12_000 });
+    ).toEqual({ model: "grok-4", approvalMode: "edits", sandbox: "none", browser: "html", toolOutputLimit: 12_000 });
   });
 
   it("loadConfig reads AGENT_HOME/config.json under env and CLI", () => {
@@ -122,6 +122,8 @@ describe("completion and update", () => {
     expect(completionScript("powershell")).toContain("Register-ArgumentCompleter");
     expect(completionScript("powershell")).toContain("'session'");
     expect(completionScript("bash")).toContain("--file");
+    expect(completionScript("bash")).toContain("--accept-edits");
+    expect(completionScript("zsh")).toContain("--accept-edits");
     expect(() => completionScript("fish")).toThrow(/bash\|zsh\|powershell/);
   });
 

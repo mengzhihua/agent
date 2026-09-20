@@ -4,6 +4,7 @@ import path from "node:path";
 import { resolveSecret } from "./credentials.js";
 import { detectSandboxBackend } from "./sandbox/plan.js";
 import type { AgentConfig, ApprovalMode, BrowserMode, ProviderName, RunMode, SandboxMode } from "./types.js";
+import { parseApprovalMode } from "./permissions/policy.js";
 import { readUserConfig } from "./user-config.js";
 
 export function agentHome(): string {
@@ -42,7 +43,7 @@ export function loadConfig(overrides: Partial<AgentConfig> = {}): AgentConfig {
     model: overrides.model ?? defaultModel(provider, file.model),
     provider,
     approvalMode: (overrides.approvalMode ??
-      (process.env.AGENT_APPROVAL as ApprovalMode | undefined) ??
+      parseApprovalMode(process.env.AGENT_APPROVAL) ??
       file.approvalMode ??
       "ask") as ApprovalMode,
     runMode: overrides.runMode ?? (process.env.AGENT_MODE as RunMode | undefined) ?? file.runMode ?? "default",
