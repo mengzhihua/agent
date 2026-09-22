@@ -22,6 +22,7 @@ describe("release tarball", () => {
     expect(fs.existsSync(packed.tarball)).toBe(true);
     expect(fs.existsSync(path.join(outDir, `agent-${packed.version}.tgz`))).toBe(true);
     expect(fs.readFileSync(path.join(outDir, "SHA256SUMS"), "utf8")).toContain("agent.tgz");
+    expect(fs.readFileSync(path.join(outDir, "NOTES.md"), "utf8")).toContain("agent permissions");
 
     const extract = fs.mkdtempSync(path.join(os.tmpdir(), "agent-pack-extract-"));
     const tar = spawnSync("tar", ["-xzf", packed.tarball, "-C", extract], { encoding: "utf8" });

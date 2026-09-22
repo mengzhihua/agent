@@ -8,6 +8,7 @@ import { completionScript } from "./completion.js";
 import { configReport, doctorReport } from "./doctor.js";
 import { runEvalTarget } from "./eval/run.js";
 import { AgentHost } from "./host.js";
+import { formatAllowList, PermissionMemory, permissionsPath } from "./permissions/allow.js";
 import { autoApprover, denyApprover, parseApprovalAnswer } from "./permissions/policy.js";
 import { createProvider } from "./provider/factory.js";
 import { runAcpStdio } from "./protocol/acp.js";
@@ -43,6 +44,7 @@ function usage(): string {
        agent eval <file-or-dir>
        agent session list|show|delete|export|fork|rewind|compact|cost [id]
        agent memory [show]
+       agent permissions [clear]
        agent doctor
        agent config
        agent init [dir]
@@ -171,6 +173,11 @@ async function main(): Promise<void> {
 
   if (process.argv[2] === "memory") {
     runMemoryCommand(process.argv.slice(3));
+    return;
+  }
+
+  if (process.argv[2] === "permissions") {
+    runPermissionsCommand(process.argv.slice(3));
     return;
   }
 
@@ -459,6 +466,25 @@ function runMemoryCommand(argv: string[]): void {
   output.write(`${formatMemoryShow(files, machine)}\n`);
 }
 
+function runPermissionsCommand(argv: string[]): void {
+  const { values, positionals } = parseArgs({
+    args: argv,
+    allowPositionals: true,
+    options: {
+      "output-format": { type: "string" },
+    },
+  });
+  const action = positionals[0] ?? "list";
+  if (action !== "list" && action !== "clear") {
+    throw new Error("usage: agent permissions [list|clear]");
+  }
+  const memory = PermissionMemory.load();
+  const format = parseOutputFormat(values["output-format"]);
+  const machine = format === "text" ? "text" : "json";
+  if (action === "clear") memory.clearPersisted();
+  output.write(`${formatAllowList(memory.persisted, machine, permissionsPath())}\n`);
+}
+
 async function interactive(host: AgentHost, sessionId: string): Promise<void> {
   const rl = createInterface({ input, output, terminal: true });
   console.log("Type a task. /help for commands. Ctrl+C cancels the current turn.");
@@ -480,7 +506,7 @@ async function interactive(host: AgentHost, sessionId: string): Promise<void> {
       if (!line) continue;
       if (line === "/quit" || line === "/exit") break;
       if (line === "/help") {
-        console.log("/quit  /yes  /edits  /ask  /plan  /execute  /skills  /session  /fork  /rewind  /compact  /memory  /cost");
+        console.log("/quit  /yes  /edits  /ask  /plan  /execute  /skills  /session  /fork  /rewind  /compact  /memory  /permissions  /cost");
         continue;
       }
       if (line === "/session") {
@@ -512,6 +538,10 @@ async function interactive(host: AgentHost, sessionId: string): Promise<void> {
       }
       if (line === "/memory") {
         console.log(formatMemoryShow(loadMemory(host.config.workspace), "text"));
+        continue;
+      }
+      if (line === "/permissions") {
+        console.log(formatAllowList(host.permissions.persisted, "text", permissionsPath()));
         continue;
       }
       if (line === "/cost") {

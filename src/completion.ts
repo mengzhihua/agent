@@ -10,7 +10,7 @@ function bashCompletion(): string {
   return `# bash completion for agent
 _agent() {
   local cur="\${COMP_WORDS[COMP_CWORD]}"
-  local cmds="acp eval session memory doctor update uninstall serve completion config init login logout --help --version --print --quiet --output-format --yes --accept-edits --plan --workspace --continue --resume --list --file --model --provider --sandbox --browser --no-mcp"
+  local cmds="acp eval session memory permissions doctor update uninstall serve completion config init login logout --help --version --print --quiet --output-format --yes --accept-edits --plan --workspace --continue --resume --list --file --model --provider --sandbox --browser --no-mcp"
   COMPREPLY=( $(compgen -W "$cmds" -- "$cur") )
 }
 complete -F _agent agent
@@ -26,6 +26,7 @@ _agent() {
     'eval:Run deterministic eval fixtures'
     'session:List, inspect, export, fork, rewind, compact, cost, or delete sessions'
     'memory:Show durable user and project memory'
+    'permissions:List or clear persisted allow rules'
     'doctor:Show install and runtime diagnostics'
     'update:Re-run the one-click installer'
     'uninstall:Remove shims and checkout'
@@ -64,7 +65,7 @@ function powershellCompletion(): string {
   return `Register-ArgumentCompleter -Native -CommandName agent -ScriptBlock {
   param($wordToComplete)
   $cmds = @(
-    'acp','eval','session','memory','doctor','update','uninstall','serve','completion','config','init','login','logout',
+    'acp','eval','session','memory','permissions','doctor','update','uninstall','serve','completion','config','init','login','logout',
     '--help','--version','--print','--quiet','--output-format','--yes','--accept-edits','--plan','--workspace','--continue','--resume',
     '--list','--file','--model','--provider','--sandbox','--browser','--no-mcp'
   )

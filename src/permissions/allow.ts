@@ -57,6 +57,23 @@ export class PermissionMemory {
     if (!list.some((existing) => sameRule(existing, rule))) list.push(rule);
     if (persist && this.file) writeAllowRules(this.file, this.persisted);
   }
+
+  clearPersisted(): void {
+    this.persisted = [];
+    if (this.file) writeAllowRules(this.file, []);
+  }
+}
+
+export function formatAllowRule(rule: AllowRule): string {
+  return rule.command ? `${rule.tool}  ${rule.command}` : rule.tool;
+}
+
+export function formatAllowList(rules: AllowRule[], format: "text" | "json", file?: string): string {
+  if (format === "json") return JSON.stringify({ path: file, allow: rules });
+  if (rules.length === 0) return file ? `(no persisted allows)\n${file}` : "(no persisted allows)";
+  const lines = rules.map(formatAllowRule);
+  if (file) lines.push(file);
+  return lines.join("\n");
 }
 
 export function readAllowRules(file: string): AllowRule[] {
