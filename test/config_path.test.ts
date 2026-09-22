@@ -124,6 +124,7 @@ describe("completion and update", () => {
     expect(completionScript("bash")).toContain("--file");
     expect(completionScript("bash")).toContain("--accept-edits");
     expect(completionScript("zsh")).toContain("--accept-edits");
+    expect(completionScript("bash")).toContain("permissions");
     expect(() => completionScript("fish")).toThrow(/bash\|zsh\|powershell/);
   });
 

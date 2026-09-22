@@ -134,6 +134,7 @@ describe("one-click setup", () => {
     expect(help.stdout).toContain("agent session list|show|delete|export|fork|rewind|compact|cost");
     expect(help.stdout).toContain("--continue");
     expect(help.stdout).toContain("agent memory");
+    expect(help.stdout).toContain("agent permissions");
     expect(help.stdout).toContain("agent serve");
     expect(help.stdout).toContain("web console");
     expect(help.stdout).toContain("--file");

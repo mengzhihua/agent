@@ -80,7 +80,7 @@ export function packRelease(opts = {}) {
   };
   fs.writeFileSync(path.join(dest, "package.json"), `${JSON.stringify(releasePkg, null, 2)}\n`);
 
-  writeNotes(outDir, version);
+  writeNotes(outDir, version, readChangelog(from, version));
 
 
   const tarball = path.join(outDir, "agent.tgz");
@@ -95,10 +95,31 @@ export function packRelease(opts = {}) {
   return { version, outDir, tarball, versioned, notes: path.join(outDir, "NOTES.md") };
 }
 
-export function writeNotes(outDir, version) {
+export function changelogSection(markdown, version) {
+  const header = `## ${version}`;
+  const lines = String(markdown).split(/\r?\n/);
+  const start = lines.findIndex((line) => line.trim() === header);
+  if (start < 0) return "";
+  const body = [];
+  for (let i = start + 1; i < lines.length; i++) {
+    if (lines[i].startsWith("## ")) break;
+    body.push(lines[i]);
+  }
+  return body.join("\n").trim();
+}
+
+function readChangelog(from, version) {
+  const file = path.join(from, "CHANGELOG.md");
+  if (!fs.existsSync(file)) return "";
+  return changelogSection(fs.readFileSync(file, "utf8"), version);
+}
+
+export function writeNotes(outDir, version, changelog = "") {
+  const changes = changelog.trim() ? ["## Changes", "", changelog.trim(), ""] : [];
   const notes = [
     `# agent ${version}`,
     "",
+    ...changes,
     "Preferred: native binaries. Node.js is not required.",
     "",
     "| Platform | Asset |",
@@ -143,7 +164,7 @@ export function finalizeRelease(opts = {}) {
   const from = opts.from ?? root;
   const outDir = opts.outDir ?? path.join(from, "dist-release");
   const pkg = JSON.parse(fs.readFileSync(path.join(from, "package.json"), "utf8"));
-  writeNotes(outDir, pkg.version);
+  writeNotes(outDir, pkg.version, readChangelog(from, pkg.version));
   writeChecksums(outDir);
   return { version: pkg.version, outDir };
 }
@@ -162,7 +183,7 @@ export async function packAll(opts = {}) {
     const { packServerJar } = await import("./pack-server-jar.mjs");
     await packServerJar({ from: opts.from, outDir: packed.outDir, nativeFiles });
   }
-  writeNotes(packed.outDir, packed.version);
+  writeNotes(packed.outDir, packed.version, readChangelog(opts.from ?? root, packed.version));
   writeChecksums(packed.outDir);
   return packed;
 }

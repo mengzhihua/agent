@@ -2,7 +2,7 @@
 
 通用 agent 软件：一个极简的模型–工具循环，外面套 harness。
 
-当前进度：**期 33 — 审批光谱：改文件自动放行，shell/网络仍问；可记住允许**。
+当前进度：**期 34 — 查看/撤销记住的权限，Release 说明带变更**。
 
 - [行业研究](docs/industry-agent-research.md) — Codex、Claude Code、Grok Build、Devin、Cursor、Gemini CLI、Manus、OpenHands 等怎么做，以及通用 harness 的收敛形态
 - [期 0](docs/phase-0.md)
@@ -39,6 +39,7 @@
 - [期 31](docs/phase-31.md)
 - [期 32](docs/phase-32.md)
 - [期 33](docs/phase-33.md)
+- [期 34](docs/phase-34.md)
 
 ## 研究结论（极简）
 
@@ -71,6 +72,7 @@ irm https://raw.githubusercontent.com/mengzhihua/agent/main/scripts/install.ps1 
 | 平台 | 文件 |
 | --- | --- |
 | Windows x64 | `agent-win-x64.exe` |
+| Windows arm64 | `agent-win-arm64.exe` |
 | macOS Apple Silicon | `agent-darwin-arm64.tar.gz`（macOS 14 ARM 上 codesign） |
 | macOS Intel | `agent-darwin-x64.tar.gz` |
 | Linux x64 | `agent-linux-x64.tar.gz` |
@@ -94,7 +96,7 @@ docker build -t agent . && docker run --rm -p 8080:8080 -e OPENAI_API_KEY agent
 
 装好后执行 `agent doctor`。新开一个终端即可直接运行 `agent`。之后可用 `agent update` / `agent uninstall`。
 
-指定版本：`AGENT_REF=v0.34.0`。要从源码装 main：`AGENT_REF=main`（此时需要 Node 22）。
+指定版本：`AGENT_REF=v0.35.0`。要从源码装 main：`AGENT_REF=main`（此时需要 Node 22）。
 
 合入 `main` 且 CI（Linux / macOS / Windows）全绿后，GitHub Actions 会打 `v*` Release（原生包 + tarball + `agent-server.jar`）。
 
@@ -143,6 +145,8 @@ agent session compact <id>
 agent session cost <id>
 agent session delete <id>
 agent memory show
+agent permissions
+agent permissions clear
 agent serve --port 8080  # 浏览器打开 / ；SSE：Accept text/event-stream
 agent --resume <id> -p "continue"
 agent acp             # JSON-RPC（NDJSON 或 Content-Length；ask 时向客户端要权限；fs/terminal/MCP 走编辑器）
@@ -182,6 +186,6 @@ MCP 工具以 `mcp__<server>__<tool>` 接在后面。
 
 会话存在 `$AGENT_HOME/sessions`（默认 `~/.agent/sessions`）。
 默认配置 `$AGENT_HOME/config.json`。
-记住的权限 `$AGENT_HOME/permissions.json`（提示时选 `always`）。
+记住的权限 `$AGENT_HOME/permissions.json`（提示时选 `always`；`agent permissions clear` 清空）。
 API key `$AGENT_HOME/credentials.json`（`agent login`，权限 0600）。
 交付物存在 `$AGENT_ARTIFACTS` 或 `<workspace>/artifacts`。

@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { autoApprover, decidePermission, defaultDecision, denyApprover, parseApprovalAnswer, parseApprovalMode } from "../src/permissions/policy.js";
-import { PermissionMemory, matchesRule, parseAllowRules, ruleForCall } from "../src/permissions/allow.js";
+import { PermissionMemory, formatAllowList, matchesRule, parseAllowRules, ruleForCall } from "../src/permissions/allow.js";
 
 describe("permissions", () => {
   it("allows reads without asking", () => {
@@ -167,5 +167,9 @@ describe("permissions", () => {
     expect(parseAllowRules([{ tool: "shell", command: "npm test" }])).toEqual([{ tool: "shell", command: "npm test" }]);
     expect(matchesRule({ tool: "shell", command: "npm test" }, "shell", { command: "npm test --ci" })).toBe(true);
     expect(ruleForCall("shell", { command: " npm test " })).toEqual({ tool: "shell", command: "npm test" });
+    expect(formatAllowList([{ tool: "shell", command: "npm test" }], "text", file)).toContain("shell  npm test");
+    persist.clearPersisted();
+    expect(PermissionMemory.load(dir).persisted).toEqual([]);
+    expect(formatAllowList([], "text", file)).toContain("(no persisted allows)");
   });
 });
