@@ -50,7 +50,7 @@ CLI / ACP / HTTP / 网页控制台 / Spring Boot（拉起同一个二进制）
 
 ## 4. 会话
 
-一个会话是 `$AGENT_HOME/sessions/<id>.jsonl`（默认 `~/.agent/sessions`）。只追加，不改历史对象。写入前用 `redactSecrets` 去掉密钥。`rewind` / `fork` / `compact` 会整文件替换，先写 `.tmp` 再改名。
+一个会话是 `$AGENT_HOME/sessions/<id>.jsonl`（默认 `~/.agent/sessions`）。普通写入只追加。写入前用 `redactSecrets` 去掉密钥。`rewind` 和 `fork` 会整文件替换，先写 `.tmp` 再改名。`compact` 不删旧行，只追加事件。
 
 事件类型：`session_meta`、`user`、`assistant`、`tool_call`、`tool_result`、`usage`、`compact`、`plan`、`artifact`。
 
@@ -69,7 +69,7 @@ CLI / ACP / HTTP / 网页控制台 / Spring Boot（拉起同一个二进制）
 | resume | 打开已有 id，可顺带换 workspace |
 | fork | 复制事件到新 id，`session_meta.forkedFrom` 指向源；可选截到某个 event id |
 | rewind | 默认删掉最后一个 `user` 及其后事件；也可截到指定 event id。不能删掉 `session_meta` |
-| compact | 调当前模型写摘要，追加 `compact` 事件。自动 compact 在估算 token ≥ `compactTokens`（默认 100_000）时发生 |
+| compact | 调当前模型写摘要，只追加 `compact` 事件，不删旧行。自动 compact 在估算 token ≥ `compactTokens`（默认 100_000）时发生。若文件末尾是 `user`，总结时先拿掉它，摘要写入后再把这条 `user` 追加回去；否则总结当前组装结果。手动 compact 总结当前组装结果。列表按最后一条事件的时间倒序 |
 | delete | 关掉该会话的浏览器和 MCP，再删文件 |
 
 fork / rewind 只动 transcript，不回滚工作区里的文件。
@@ -140,7 +140,9 @@ fork / rewind 只动 transcript，不回滚工作区里的文件。
 
 沙箱只包 shell，不包网络工具。Linux 且装了 bubblewrap、`sandbox` 为 `auto` 时，shell 经 bwrap：`--unshare-net`、根目录只读、workspace（以及 artifacts、额外目录）可写。macOS / Windows 没有 bwrap，后端保持 `none`。`AGENT_SANDBOX=none` 关掉检测。
 
-计划模式是 `runMode: "plan"`，不是另一个循环。工具 schema 仍在，拦截止发生在权限层。system prompt 要求先研究再 `update_plan`，等用户 `/execute` 后再改。
+无论后端是不是 bwrap，shell 的环境都会去掉变量名里带 `key`、`token`、`secret`、`password`、`credential`、`passwd` 的项。`PATH`、`HOME`、`LANG`、`LC_*` 以及 Windows 上的 `SystemRoot`、`COMSPEC` 等保留。`web_search`、`web_fetch`、`browser` 仍在 agent 进程里联网。
+
+计划模式是 `runMode: "plan"`，不是另一个循环。工具 schema 仍完整留在请求里（含写和 shell），这样前缀不变、方便缓存；拦截止发生在权限层。system prompt 要求先研究再 `update_plan`，等用户 `/execute` 后再改。
 
 hooks（`.agent/hooks.json`）在权限之后。`PreToolUse` 可以拒绝，`PostToolUse` 可以往结果后追加文本，`Stop` 在回合结束时跑。matcher 按工具名。
 
@@ -152,7 +154,19 @@ hooks（`.agent/hooks.json`）在权限之后。`PreToolUse` 可以拒绝，`Pos
 2. 若目录是 git 仓库，附一行 git 摘要。不是仓库就跳过。
 3. `AGENTS.md`：先 `~/.agent/AGENTS.md`，再从家目录方向往下的父目录（最多 8 层），然后工作区自己的 `AGENTS.md` 和 `AGENTS.override.md`。合计截断到 32KB。
 4. 记忆：`~/.agent/MEMORY.md` 和 `<workspace>/.agent/MEMORY.md`。
-5. Skill 目录（名字和描述）。正文要等模型调用 `skill`，或用户在消息里点名，才注入。
+5. Skill 目录（名字和描述，最长约 8000 字符）。正文要等模型调用 `skill`，或用户在消息里写 `$name` / `/name`，才放进 `<loaded_skills>`。
+
+技能从三处加载，同名以后者为准：`~/.agent/skills/<name>/SKILL.md`，然后 `<workspace>/.agents/skills/`，最后 `<workspace>/.agent/skills/`。`SKILL.md` 可以有 YAML 头：
+
+```markdown
+---
+name: review
+description: How to review a change
+---
+正文只在被点名或调用 skill 工具时进入上下文。
+```
+
+没有头时，名字用目录名。目录按名字排序后再放进 system prompt。
 
 浏览器：`auto` 时本机有 Chrome 或 Edge 就走 CDP（无头、可跑页面脚本、可截图），否则 `HtmlDriver` 只做静态 fetch。`AGENT_BROWSER=html` 强制静态。
 
@@ -178,7 +192,7 @@ hooks（`.agent/hooks.json`）在权限之后。`PreToolUse` 可以拒绝，`Pos
 
 ### HTTP 与网页
 
-`agent serve` 用 Node `http`，默认端口 8080。`AGENT_TOKEN` 设置后，除健康检查和页面外要 `Authorization: Bearer` 或 `X-Agent-Token`。
+`agent serve` 用 Node `http`，默认端口 8080。`AGENT_SERVE_TOKEN` 设置后，除健康检查、`/v1` 和页面外要 `Authorization: Bearer` 或 `X-Agent-Token`。Java 过滤器读的是同一个环境变量。
 
 | 方法 | 路径 | 作用 |
 | --- | --- | --- |
@@ -254,7 +268,136 @@ MCP 服务器可以是 stdio（`command` / `args` / `env`）或 HTTP（`url` / `
 - rewind 不恢复磁盘上的旧文件。
 - 子 agent 不能再派子 agent。MCP 工具名单不在对话中途增删；要换就新会话或重新 `session/new`。
 
-## 14. 源码地图
+## 14. 文件契约
+
+`agent init` 只补缺失文件，不覆盖已有内容。它会创建 `AGENTS.md`、`.agentignore`、`.agent/mcp.json`、`.agent/hooks.json`、`.agent/MEMORY.md`，以及空的 `.agent/skills/`。
+
+### Skills
+
+见第 8 节。正文不进每一轮的 system prompt。
+
+### Hooks
+
+`.agent/hooks.json`：
+
+```json
+{
+  "PreToolUse": [{ "matcher": "shell", "command": "node .agent/hooks/guard.mjs" }],
+  "PostToolUse": [],
+  "Stop": [{ "command": "echo done" }]
+}
+```
+
+`matcher` 省略或 `*` 表示全部工具；否则按正则匹配工具名，正则不合法时退回整串相等。命令在工作区里用 shell 启动，stdin 是一段 JSON（`hook`、`tool`、`arguments`；PostToolUse 另有 `content` 和 `isError`；Stop 只有 `hook` 和 `text`）。超时 10 秒。退出码非 0，或 stdout 是 `{ "decision": "deny", "reason": "..." }`，则 PreToolUse 拒绝这次调用。成功时可以把 `{ "append": "..." }` 贴到工具结果后面。文件坏了当成没有 hooks。
+
+### MCP
+
+`~/.agent/mcp.json` 与 `<workspace>/.agent/mcp.json` 合并，工作区覆盖同名服务器。
+
+```json
+{
+  "mcpServers": {
+    "docs": { "command": "npx", "args": ["-y", "some-mcp"], "env": { "FOO": "bar" } },
+    "remote": { "url": "https://example.com/mcp", "headers": { "authorization": "Bearer …" } }
+  }
+}
+```
+
+stdio 用 Content-Length 帧。HTTP 是 JSON-RPC，不用 SSE。工具名 `mcp__<server>__<tool>`，按名字排序接在内置工具后面。单个服务器失败只写 stderr。
+
+### 记住的允许
+
+`permissions.json` 是数组：
+
+```json
+[{ "tool": "shell", "command": "npm test" }, { "tool": "web_fetch" }]
+```
+
+`command` 只对 shell 有意义。没有 `command` 表示这个工具的任意参数都放行。`session` 回答不写这个文件。
+
+### 凭据
+
+`credentials.json` 字段是 `openaiApiKey`、`openaiBaseUrl`、`xaiApiKey`、`anthropicApiKey`。`agent login --provider openai|anthropic|xai` 写入，文件权限 0600。环境变量 `OPENAI_API_KEY`、`OPENAI_BASE_URL`、`XAI_API_KEY`、`ANTHROPIC_API_KEY` 优先于文件。transcript 和 HTTP 响应在写出前做同一套脱敏。
+
+### Eval
+
+`agent eval` 不调模型。每个 JSON 用例复制 `workspace` 到临时目录，按 `steps` 直接执行工具，再看断言。
+
+```json
+{
+  "name": "fix-add",
+  "workspace": "../fixtures/broken-add",
+  "steps": [{ "name": "apply_patch", "arguments": { "path": "src/add.js", "old_string": "return a - b", "new_string": "return a + b" } }],
+  "assert": { "fileContains": { "src/add.js": "return a + b" } }
+}
+```
+
+`assert.notFileContains` 同样是路径到子串。目录里所有 `.json` 按文件名排序跑。审批在 eval 里是 `auto`。
+
+## 15. 工具契约
+
+| 工具 | 参数要点 |
+| --- | --- |
+| `read` | `path`，可选 `offset` / `limit` |
+| `grep` | `pattern`，可选 `path`、`glob`、`max_matches`（默认 50）。有 `rg` 用 ripgrep，否则自己走目录 |
+| `glob` | `pattern`，可选 `path` |
+| `apply_patch` | `path` 加一组 `old_string`/`new_string`，或 `edits` 数组。文件不存在且 `old_string` 为空则创建。已存在的文件要求 `old_string` 恰好出现一次 |
+| `shell` | `command`，可选 `cwd`、`timeout_ms` |
+| `web_search` | `query`，可选 `count`（默认 5）。抓 DuckDuckGo 的 HTML 结果页，不需要搜索 API key |
+| `web_fetch` | `url` 必须是 http 或 https。可选 `max_chars`（默认 12000）、`save`、`title`。HTML 会抽成文本 |
+| `browser` | `action`: `open` `snapshot` `click` `type` `screenshot` `close` `takeover`。`click`/`type` 用 snapshot 里的 `ref`。`takeover` 经 `ask_user` 把登录、验证码、付款交回用户，然后重新打开该 URL |
+| `artifact` | `save` / `list` / `get`。种类：`file` `page` `screenshot` `download` `report` |
+| `ask_user` | `question`，可选选项。没有人可问时调用失败 |
+| `memory` | `get` / `append` / `replace`。`scope` 为 `user` 或 `project`（默认 project）。`get` 不带 scope 时两份都返回 |
+| `skill` | `name` |
+| `update_plan` | `steps`：`pending` / `in_progress` / `completed`，可选 `explanation` |
+| `task` | `prompt`，`subagent_type` 为 `explore` 或其他，可选 `label` |
+
+grep/glob 忽略：内置跳过 `.git`、`node_modules`、`dist`、`build`、`coverage`、虚拟环境、`__pycache__`、`target`、`.env`。另外读 `.gitignore` 和 `.agentignore`（gitignore 语法）。
+
+Git 不是前提。工作区根上有 `.git` 时，system prompt 里加一行分支和是否脏；没有 `git` 可执行文件就只说明目录存在。不往上找父仓库。
+
+## 16. 输出、用量和窗口
+
+`--output-format json` 在一轮结束时给一条：
+
+```json
+{
+  "type": "result",
+  "sessionId": "…",
+  "text": "…",
+  "isError": false,
+  "aborted": false,
+  "tools": [{ "callId": "…", "name": "read", "isError": false }],
+  "usage": { "inputTokens": 0, "outputTokens": 0 }
+}
+```
+
+`stream-json` 把每个 `LoopEvent` 打成一行 `{ "sessionId", ...event }`，最后再加一条上面的 result。`ndjson` 和 `stream_json` 是同一格式。HTTP SSE 的 `data:` 载荷与这两行相同。
+
+token 估算是字符数除以 4，只用于决定要不要自动 compact，不是供应商账单。真实用量来自 provider 的 `usage` 事件，按会话累加。`session cost`、`/cost`、ACP `usage_update` 用同一份合计。美元数是公开标价的估算，认这些模型子串：`claude-opus`、`claude-sonnet`、`grok-4`、`gpt-4.1`、`gpt-4o`。对不上就不报金额。
+
+ACP 上报的上下文窗口按模型名估算：Claude 200_000，Grok 256_000，gpt-4.1 为 1_047_576，gpt-4o / gpt-4 为 128_000，其余取 `max(compactTokens, 128_000)`。
+
+模型 HTTP 对 429、500、502、503、529 最多再试 3 次。有 `Retry-After` 就照它等，否则从 200ms 指数增加，单次最多 8 秒。
+
+## 17. ACP 配置项
+
+`session/new` 和 `session/set_config_option` 暴露三个 select：
+
+| id | 取值 | 作用 |
+| --- | --- | --- |
+| `mode` | `plan` / `execute` | 计划模式或执行。`execute` 对应 `runMode: default` |
+| `model` | 当前模型，以及 `gpt-4.1`、`grok-4`、`claude-sonnet-4-5` | 只接受这份列表里的值 |
+| `approval` | `ask` / `edits` / `auto` | 审批光谱 |
+
+权限请求的 `optionId`：`allow-once`、`allow-session`、`allow-always`、`reject-once`。`ask_user` 的选项是 `allow-choice-<n>`，另有 `allow-once`（继续）和 `reject-once`（取消）。
+
+## 18. doctor
+
+`agent doctor` 打印：版本、是不是 SEA、系统、默认 shell、安装目录、`AGENT_HOME`、PATH 里有没有 bin、配置文件在不在、工作区、git、沙箱后端、浏览器二进制、ripgrep 还是自带 walker、provider/model、密钥来源（env / file / missing，不打印密钥本身）、审批模式和已记住的条数。`agent config` 只打生效配置和记住的条数。
+
+## 19. 源码地图
 
 | 路径 | 职责 |
 | --- | --- |
@@ -275,7 +418,7 @@ MCP 服务器可以是 stdio（`command` / `args` / `env`）或 HTTP（`url` / `
 | `src/eval/` | 确定性评测 |
 | `server-java/` | 调用同一二进制的 Spring Boot |
 
-## 15. 默认值
+## 20. 默认值
 
 | 项 | 默认 |
 | --- | --- |
