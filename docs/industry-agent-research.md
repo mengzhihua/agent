@@ -2,7 +2,7 @@
 
 本文梳理 Codex、Claude Code、Grok Build、Devin、Cursor、Gemini CLI、Manus、OpenHands 等产品，以及 LangGraph / Deep Agents 等框架，回答一件事：**行业里的通用 agent 到底是怎么做的，自己做一个该抄什么、不该抄什么。**
 
-研究截止 2026 年 9 月，依据官方工程博客、开源仓库、技术报告和公开源码分析。
+研究截止 2026 年 9 月，依据官方工程博客、开源仓库、技术报告和公开源码分析。本仓库按这些结论落地的实现见 [技术方案](architecture.md)（v0.35.0）。文中的多包草图没有照搬，运行时是单一 TypeScript 包。
 
 ---
 

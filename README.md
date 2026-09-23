@@ -2,7 +2,7 @@
 
 通用 agent：一个极简的模型–工具循环，外面套 harness（上下文、权限、沙箱、会话、MCP、Skills）。同一套循环给 CLI、ACP、HTTP 和网页控制台用。
 
-**当前版本 [v0.35.0](https://github.com/mengzhihua/agent/releases/tag/v0.35.0)** · [变更记录](CHANGELOG.md) · [最新 Release](https://github.com/mengzhihua/agent/releases/latest)
+**当前版本 [v0.35.0](https://github.com/mengzhihua/agent/releases/tag/v0.35.0)** · [技术方案](docs/architecture.md) · [变更记录](CHANGELOG.md) · [最新 Release](https://github.com/mengzhihua/agent/releases/latest)
 
 工作区不必是 git 仓库。交付物默认写到 `artifacts/`。
 
@@ -190,7 +190,7 @@ docker run --rm -p 8080:8080 -e OPENAI_API_KEY agent
 
 ## 开发记录
 
-一线产品共用同一套循环；差异主要在 workspace（本机 / 容器 / 云 VM）和产品表面（CLI、IDE、异步云端、通用电脑）。落地顺序是先做出可取消、可 resume 的 tool loop，再加 Skills / MCP / 权限，再考虑浏览器与云端 VM。详见 [行业研究](docs/industry-agent-research.md)。
+当前实现见 [技术方案](docs/architecture.md)。行业上为什么做成一个循环、多种表面，见 [行业研究](docs/industry-agent-research.md)。下面是分期记录。
 
 - [期 0](docs/phase-0.md) · [期 1](docs/phase-1.md) · [期 2](docs/phase-2.md) · [期 3](docs/phase-3.md) · [期 4](docs/phase-4.md)
 - [期 5](docs/phase-5.md) · [期 6](docs/phase-6.md) · [期 7](docs/phase-7.md) · [期 8](docs/phase-8.md) · [期 9](docs/phase-9.md)
